@@ -1,0 +1,763 @@
+const Payment = require('../models/Payment');
+const ServiceRequest = require('../models/ServiceRequest');
+const User = require('../models/User');
+const logger = require('../config/logger');
+const paymentService = require('../services/paymentService');
+const notificationService = require('../services/notificationService');
+const crypto = require('crypto');
+
+/**
+ * @swagger
+ * components:
+ *   schemas:
+ *     PaymentRequest:
+ *       type: object
+ *       required:
+ *         - serviceRequestId
+ *         - amount
+ *       properties:
+ *         serviceRequestId:
+ *           type: string
+ *           description: ID of the service request
+ *         amount:
+ *           type: number
+ *           minimum: 1
+ *           description: Payment amount in INR
+ *         currency:
+ *           type: string
+ *           default: INR
+ *           enum: [INR]
+ *     PaymentResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *         message:
+ *           type: string
+ *         data:
+ *           type: object
+ *           properties:
+ *             paymentId:
+ *               type: string
+ *             orderId:
+ *               type: string
+ *             amount:
+ *               type: number
+ *             currency:
+ *               type: string
+ *             razorpayOrderId:
+ *               type: string
+ *             razorpayKey:
+ *               type: string
+ */
+
+/**
+ * @swagger
+ * /api/payments/create-order:
+ *   post:
+ *     summary: Create a payment order
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             $ref: '#/components/schemas/PaymentRequest'
+ *     responses:
+ *       201:
+ *         description: Payment order created successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/PaymentResponse'
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+const createPaymentOrder = async (req, res) => {
+  try {
+    const { serviceRequestId, amount, currency = 'INR' } = req.body;
+    const customerId = req.user.id;
+
+    // Validate service request
+    const serviceRequest = await ServiceRequest.findOne({
+      _id: serviceRequestId,
+      customer: customerId,
+      status: 'completed'
+    }).populate('assignedMechanic', 'name email');
+
+    if (!serviceRequest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service request not found or not eligible for payment'
+      });
+    }
+
+    // Check if payment already exists
+    const existingPayment = await Payment.findOne({
+      serviceRequest: serviceRequestId,
+      status: { $in: ['success', 'pending'] }
+    });
+
+    if (existingPayment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment already exists for this service request',
+        data: {
+          paymentId: existingPayment._id,
+          status: existingPayment.status
+        }
+      });
+    }
+
+    // Validate amount against service request
+    if (amount !== serviceRequest.finalAmount) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment amount does not match service amount',
+        expected: serviceRequest.finalAmount,
+        provided: amount
+      });
+    }
+
+    // Create Razorpay order
+    const razorpayOrder = await paymentService.createOrder({
+      amount: amount * 100, // Convert to paise
+      currency,
+      receipt: `order_${serviceRequestId}_${Date.now()}`,
+      notes: {
+        serviceRequestId,
+        customerId,
+        mechanicId: serviceRequest.assignedMechanic._id.toString()
+      }
+    });
+
+    // Create payment record
+    const payment = new Payment({
+      customer: customerId,
+      serviceRequest: serviceRequestId,
+      amount,
+      currency,
+      razorpayOrderId: razorpayOrder.id,
+      status: 'pending',
+      createdAt: new Date()
+    });
+
+    await payment.save();
+
+    logger.info('Payment order created', {
+      paymentId: payment._id,
+      customerId,
+      serviceRequestId,
+      amount,
+      razorpayOrderId: razorpayOrder.id
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Payment order created successfully',
+      data: {
+        paymentId: payment._id,
+        orderId: razorpayOrder.id,
+        amount,
+        currency,
+        razorpayOrderId: razorpayOrder.id,
+        razorpayKey: process.env.RAZORPAY_KEY_ID,
+        serviceRequest: {
+          id: serviceRequest._id,
+          issueType: serviceRequest.issueType,
+          mechanic: serviceRequest.assignedMechanic.name
+        }
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error creating payment order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment order',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/payments/verify:
+ *   post:
+ *     summary: Verify payment after successful transaction
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - paymentId
+ *               - razorpayPaymentId
+ *               - razorpayOrderId
+ *               - razorpaySignature
+ *             properties:
+ *               paymentId:
+ *                 type: string
+ *                 description: Our internal payment ID
+ *               razorpayPaymentId:
+ *                 type: string
+ *                 description: Razorpay payment ID
+ *               razorpayOrderId:
+ *                 type: string
+ *                 description: Razorpay order ID
+ *               razorpaySignature:
+ *                 type: string
+ *                 description: Razorpay signature for verification
+ *     responses:
+ *       200:
+ *         description: Payment verified successfully
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+const verifyPayment = async (req, res) => {
+  try {
+    const { paymentId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
+    const customerId = req.user.id;
+
+    // Find payment record
+    const payment = await Payment.findOne({
+      _id: paymentId,
+      customer: customerId,
+      razorpayOrderId,
+      status: 'pending'
+    }).populate({
+      path: 'serviceRequest',
+      populate: {
+        path: 'assignedMechanic',
+        select: 'name email phone'
+      }
+    });
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment record not found or already processed'
+      });
+    }
+
+    // Verify signature
+    const body = razorpayOrderId + '|' + razorpayPaymentId;
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+      .update(body.toString())
+      .digest('hex');
+
+    if (expectedSignature !== razorpaySignature) {
+      // Update payment status to failed
+      payment.status = 'failed';
+      payment.failureReason = 'Invalid signature';
+      payment.updatedAt = new Date();
+      await payment.save();
+
+      logger.warn('Payment signature verification failed', {
+        paymentId,
+        razorpayPaymentId,
+        customerId
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: 'Payment verification failed - invalid signature'
+      });
+    }
+
+    // Verify payment with Razorpay
+    try {
+      const razorpayPayment = await paymentService.getPayment(razorpayPaymentId);
+      
+      if (razorpayPayment.status !== 'captured') {
+        throw new Error(`Payment not captured. Status: ${razorpayPayment.status}`);
+      }
+
+      // Update payment record
+      payment.status = 'success';
+      payment.razorpayPaymentId = razorpayPaymentId;
+      payment.razorpaySignature = razorpaySignature;
+      payment.paidAt = new Date();
+      payment.updatedAt = new Date();
+      payment.gatewayResponse = razorpayPayment;
+
+      await payment.save();
+
+      // Update service request payment status
+      await ServiceRequest.findByIdAndUpdate(payment.serviceRequest._id, {
+        paymentStatus: 'paid',
+        paidAt: new Date()
+      });
+
+      // Send notifications
+      try {
+        // Notify customer
+        await notificationService.sendEmail(
+          req.user.email,
+          'Payment Successful - RoadGuard',
+          'payment-success',
+          {
+            customerName: req.user.name,
+            amount: payment.amount,
+            serviceType: payment.serviceRequest.issueType,
+            paymentId: razorpayPaymentId,
+            mechanicName: payment.serviceRequest.assignedMechanic.name
+          }
+        );
+
+        // Notify mechanic
+        await notificationService.sendEmail(
+          payment.serviceRequest.assignedMechanic.email,
+          'Payment Received - RoadGuard',
+          'payment-received',
+          {
+            mechanicName: payment.serviceRequest.assignedMechanic.name,
+            amount: payment.amount,
+            customerName: req.user.name,
+            serviceType: payment.serviceRequest.issueType
+          }
+        );
+
+      } catch (notificationError) {
+        logger.warn('Failed to send payment notifications:', notificationError);
+      }
+
+      // Real-time updates
+      const io = req.app.get('io');
+      if (io) {
+        // Notify customer
+        io.to(`customer_${customerId}`).emit('paymentSuccess', {
+          paymentId,
+          razorpayPaymentId,
+          amount: payment.amount,
+          timestamp: new Date().toISOString()
+        });
+
+        // Notify mechanic
+        io.to(`mechanic_${payment.serviceRequest.assignedMechanic._id}`).emit('paymentReceived', {
+          paymentId,
+          amount: payment.amount,
+          customerName: req.user.name,
+          timestamp: new Date().toISOString()
+        });
+
+        // Admin dashboard update
+        io.emit('paymentCompleted', {
+          paymentId,
+          amount: payment.amount,
+          serviceRequestId: payment.serviceRequest._id,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      logger.info('Payment verified successfully', {
+        paymentId,
+        razorpayPaymentId,
+        customerId,
+        amount: payment.amount,
+        serviceRequestId: payment.serviceRequest._id
+      });
+
+      res.json({
+        success: true,
+        message: 'Payment verified successfully',
+        data: {
+          paymentId,
+          razorpayPaymentId,
+          amount: payment.amount,
+          status: 'success',
+          paidAt: payment.paidAt,
+          serviceRequest: {
+            id: payment.serviceRequest._id,
+            issueType: payment.serviceRequest.issueType
+          }
+        }
+      });
+
+    } catch (razorpayError) {
+      // Update payment status to failed
+      payment.status = 'failed';
+      payment.failureReason = razorpayError.message;
+      payment.updatedAt = new Date();
+      await payment.save();
+
+      logger.error('Razorpay payment verification failed:', {
+        error: razorpayError.message,
+        paymentId,
+        razorpayPaymentId
+      });
+
+      return res.status(400).json({
+        success: false,
+        message: 'Payment verification failed',
+        error: razorpayError.message
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error verifying payment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify payment',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/payments/history:
+ *   get:
+ *     summary: Get payment history for the authenticated user
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           default: 1
+ *       - in: query
+ *         name: limit
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 50
+ *           default: 10
+ *       - in: query
+ *         name: status
+ *         schema:
+ *           type: string
+ *           enum: [pending, success, failed, refunded]
+ *     responses:
+ *       200:
+ *         description: Payment history retrieved successfully
+ */
+const getPaymentHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 10, status } = req.query;
+
+    // Build filter based on user role
+    const filter = {};
+    
+    if (req.user.role === 'customer') {
+      filter.customer = userId;
+    } else if (req.user.role === 'mechanic') {
+      // Get payments for service requests assigned to this mechanic
+      const mechanicRequests = await ServiceRequest.find({ assignedMechanic: userId }).select('_id');
+      filter.serviceRequest = { $in: mechanicRequests.map(req => req._id) };
+    }
+
+    if (status) filter.status = status;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [payments, totalPayments] = await Promise.all([
+      Payment.find(filter)
+        .populate('customer', 'name email')
+        .populate({
+          path: 'serviceRequest',
+          select: 'issueType completedAt location',
+          populate: {
+            path: 'assignedMechanic',
+            select: 'name email'
+          }
+        })
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      Payment.countDocuments(filter)
+    ]);
+
+    const totalPages = Math.ceil(totalPayments / parseInt(limit));
+
+    // Calculate summary statistics
+    const summary = await Payment.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: null,
+          totalAmount: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, '$amount', 0] } },
+          totalTransactions: { $sum: { $cond: [{ $eq: ['$status', 'success'] }, 1, 0] } },
+          pendingAmount: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$amount', 0] } },
+          failedTransactions: { $sum: { $cond: [{ $eq: ['$status', 'failed'] }, 1, 0] } }
+        }
+      }
+    ]);
+
+    logger.info('Payment history retrieved', {
+      userId,
+      userRole: req.user.role,
+      totalPayments,
+      status: status || 'all'
+    });
+
+    res.json({
+      success: true,
+      message: 'Payment history retrieved successfully',
+      data: {
+        payments,
+        pagination: {
+          currentPage: parseInt(page),
+          totalPages,
+          totalPayments,
+          hasNext: parseInt(page) < totalPages,
+          hasPrev: parseInt(page) > 1
+        },
+        summary: summary[0] || {
+          totalAmount: 0,
+          totalTransactions: 0,
+          pendingAmount: 0,
+          failedTransactions: 0
+        }
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching payment history:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment history',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/payments/{paymentId}:
+ *   get:
+ *     summary: Get payment details by ID
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: paymentId
+ *         required: true
+ *         schema:
+ *           type: string
+ *     responses:
+ *       200:
+ *         description: Payment details retrieved successfully
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+const getPaymentDetails = async (req, res) => {
+  try {
+    const { paymentId } = req.params;
+    const userId = req.user.id;
+
+    // Build filter based on user role
+    const filter = { _id: paymentId };
+    
+    if (req.user.role === 'customer') {
+      filter.customer = userId;
+    } else if (req.user.role === 'mechanic') {
+      // Verify this payment belongs to a service request assigned to this mechanic
+      const mechanicRequests = await ServiceRequest.find({ assignedMechanic: userId }).select('_id');
+      filter.serviceRequest = { $in: mechanicRequests.map(req => req._id) };
+    }
+    // Admin can view all payments
+
+    const payment = await Payment.findOne(filter)
+      .populate('customer', 'name email phone')
+      .populate({
+        path: 'serviceRequest',
+        populate: {
+          path: 'assignedMechanic',
+          select: 'name email phone'
+        }
+      })
+      .lean();
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment not found or access denied'
+      });
+    }
+
+    logger.info('Payment details retrieved', {
+      paymentId,
+      userId,
+      userRole: req.user.role
+    });
+
+    res.json({
+      success: true,
+      message: 'Payment details retrieved successfully',
+      data: payment
+    });
+
+  } catch (error) {
+    logger.error('Error fetching payment details:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment details',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/payments/webhook/razorpay:
+ *   post:
+ *     summary: Handle Razorpay webhook events
+ *     tags: [Payments]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *     responses:
+ *       200:
+ *         description: Webhook processed successfully
+ *       400:
+ *         description: Invalid webhook
+ */
+const handleRazorpayWebhook = async (req, res) => {
+  try {
+    const signature = req.headers['x-razorpay-signature'];
+    const body = JSON.stringify(req.body);
+
+    // Verify webhook signature
+    const expectedSignature = crypto
+      .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
+      .update(body)
+      .digest('hex');
+
+    if (signature !== expectedSignature) {
+      logger.warn('Invalid Razorpay webhook signature');
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid webhook signature'
+      });
+    }
+
+    const event = req.body;
+    
+    logger.info('Razorpay webhook received', {
+      event: event.event,
+      paymentId: event.payload?.payment?.entity?.id
+    });
+
+    switch (event.event) {
+      case 'payment.captured':
+        await handlePaymentCaptured(event.payload.payment.entity);
+        break;
+        
+      case 'payment.failed':
+        await handlePaymentFailed(event.payload.payment.entity);
+        break;
+        
+      case 'order.paid':
+        await handleOrderPaid(event.payload.order.entity);
+        break;
+        
+      default:
+        logger.info('Unhandled webhook event:', event.event);
+    }
+
+    res.json({ success: true, message: 'Webhook processed successfully' });
+
+  } catch (error) {
+    logger.error('Error processing Razorpay webhook:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process webhook'
+    });
+  }
+};
+
+// Helper function to handle payment captured event
+const handlePaymentCaptured = async (paymentEntity) => {
+  try {
+    const payment = await Payment.findOne({
+      razorpayOrderId: paymentEntity.order_id
+    }).populate('customer serviceRequest');
+
+    if (payment && payment.status === 'pending') {
+      payment.status = 'success';
+      payment.razorpayPaymentId = paymentEntity.id;
+      payment.paidAt = new Date();
+      payment.gatewayResponse = paymentEntity;
+      await payment.save();
+
+      logger.info('Payment status updated via webhook', {
+        paymentId: payment._id,
+        razorpayPaymentId: paymentEntity.id
+      });
+    }
+  } catch (error) {
+    logger.error('Error handling payment captured webhook:', error);
+  }
+};
+
+// Helper function to handle payment failed event
+const handlePaymentFailed = async (paymentEntity) => {
+  try {
+    const payment = await Payment.findOne({
+      razorpayOrderId: paymentEntity.order_id
+    });
+
+    if (payment && payment.status === 'pending') {
+      payment.status = 'failed';
+      payment.failureReason = paymentEntity.error_description || 'Payment failed';
+      payment.gatewayResponse = paymentEntity;
+      await payment.save();
+
+      logger.info('Payment marked as failed via webhook', {
+        paymentId: payment._id,
+        reason: payment.failureReason
+      });
+    }
+  } catch (error) {
+    logger.error('Error handling payment failed webhook:', error);
+  }
+};
+
+// Helper function to handle order paid event
+const handleOrderPaid = async (orderEntity) => {
+  try {
+    const payment = await Payment.findOne({
+      razorpayOrderId: orderEntity.id
+    });
+
+    if (payment) {
+      logger.info('Order paid webhook received', {
+        paymentId: payment._id,
+        orderId: orderEntity.id
+      });
+    }
+  } catch (error) {
+    logger.error('Error handling order paid webhook:', error);
+  }
+};
+
+module.exports = {
+  createPaymentOrder,
+  verifyPayment,
+  getPaymentHistory,
+  getPaymentDetails,
+  handleRazorpayWebhook
+};
