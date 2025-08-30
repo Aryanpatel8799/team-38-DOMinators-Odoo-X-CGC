@@ -332,9 +332,9 @@ class EmailService {
     try {
       if (!this.isConfigured || !this.transporter) {
         logger.info('Email service connection test skipped - running in demo mode');
-        return true; // Return true to not block app startup
+        return true; // Return true to not block app startup.
       }
-
+      
       await this.transporter.verify();
       logger.info('Email service connection verified successfully');
       return true;
