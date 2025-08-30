@@ -41,7 +41,6 @@ const MechanicDashboard = () => {
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
-      
       // Fetch assigned requests
       const requestsResponse = await requestService.getAssignedRequests({ 
         limit: 5, 
