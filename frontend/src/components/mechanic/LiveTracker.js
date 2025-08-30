@@ -430,7 +430,7 @@ const LiveTracker = ({ activeRequest = null, onLocationUpdate }) => {
         </div>
       )}
 
-      {/* Tracking Guidelines */}
+      {/* Tracking Guidelines Below*/}
       {!activeRequest && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
           <h3 className="text-lg font-semibold text-blue-900 mb-2">Location Tracking Guidelines</h3>
