@@ -394,7 +394,6 @@ const reviewVerification = asyncHandler(async (req, res) => {
     if (verification.location) {
       updateData.location = verification.location;
     }
-
     await User.findByIdAndUpdate(verification.mechanicId._id, updateData);
   }
 
