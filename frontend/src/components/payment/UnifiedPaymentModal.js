@@ -77,10 +77,25 @@ const UnifiedPaymentModal = ({
       setError(null);
       setPaymentStep('processing');
 
+      // For post-completion payments, get amount from service request
+      let paymentAmount;
+      if (paymentType === 'post-completion') {
+        paymentAmount = serviceRequest.quotation || serviceRequest.finalAmount || 500; // Fallback to ₹500 for testing
+        console.log('Service request data:', {
+          quotation: serviceRequest.quotation,
+          finalAmount: serviceRequest.finalAmount,
+          selectedAmount: paymentAmount
+        });
+      } else {
+        paymentAmount = amount;
+      }
+
       console.log('Creating payment order for:', {
         serviceRequestId: serviceRequest._id,
         paymentType,
-        amount
+        amount: paymentAmount,
+        quotation: serviceRequest.quotation,
+        finalAmount: serviceRequest.finalAmount
       });
 
       let response;
@@ -90,7 +105,7 @@ const UnifiedPaymentModal = ({
       } else if (paymentType === 'direct') {
         response = await paymentApi.createPaymentOrder({
           serviceRequestId: serviceRequest._id,
-          amount: amount,
+          amount: paymentAmount,
           currency: 'INR'
         });
       }
@@ -122,11 +137,11 @@ const UnifiedPaymentModal = ({
       }
 
       const options = {
-        key: orderData.razorpayKey || process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_51O8X8X8X8X8X8',
+        key: orderData.razorpayKey || process.env.REACT_APP_RAZORPAY_KEY_ID || 'rzp_test_CjxI6ZFqFKX7Xs',
         amount: orderData.amount * 100, // Convert to paise
         currency: orderData.currency || 'INR',
         name: 'RoadGuard',
-        description: `Payment for ${serviceRequest.issueType.replace('_', ' ')} service`,
+        description: `Payment for ${serviceRequest.issueType?.replace('_', ' ') || 'roadside assistance'} service`,
         order_id: orderData.razorpayOrderId,
         handler: function (response) {
           console.log('Payment successful:', response);
@@ -154,6 +169,38 @@ const UnifiedPaymentModal = ({
           customer_id: user?.id,
           payment_type: paymentType
         },
+        // Add test mode configuration
+        config: {
+          display: {
+            blocks: {
+              banks: {
+                name: "Pay using Bank",
+                instruments: [
+                  {
+                    method: "card",
+                    issuers: ["HDFC", "SBI", "ICICI"]
+                  },
+                  {
+                    method: "netbanking",
+                    banks: ["HDFC", "SBI", "ICICI"]
+                  },
+                ]
+              },
+              upi: {
+                name: "Pay via UPI",
+                instruments: [
+                  {
+                    method: "upi"
+                  }
+                ]
+              }
+            },
+            sequence: ["block.banks", "block.upi"],
+            preferences: {
+              show_default_blocks: false
+            }
+          }
+        }
       };
 
       const razorpayInstance = new window.Razorpay(options);

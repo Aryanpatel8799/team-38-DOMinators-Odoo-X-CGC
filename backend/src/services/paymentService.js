@@ -8,8 +8,8 @@ const notificationService = require('./notificationService');
 
 class PaymentService {
   constructor() {
-    // Use test credentials for development
-    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_51O8X8X8X8X8X8';
+    // Use proper test credentials for development
+    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_CjxI6ZFqFKX7Xs';
     const keySecret = process.env.RAZORPAY_KEY_SECRET || 'test_secret_key_here';
     
     console.log('Initializing Razorpay with key ID:', keyId);
@@ -27,6 +27,13 @@ class PaymentService {
   // Create Razorpay order (for internal use)
   async createOrder(orderData) {
     try {
+      console.log('Creating Razorpay order with data:', {
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        receipt: orderData.receipt,
+        notes: orderData.notes
+      });
+
       const razorpayOrder = await this.razorpay.orders.create({
         amount: orderData.amount,
         currency: orderData.currency || 'INR',
@@ -36,7 +43,7 @@ class PaymentService {
         capture_method: 'automatic'
       });
 
-      logger.info('Razorpay order created:', {
+      logger.info('Razorpay order created successfully:', {
         orderId: razorpayOrder.id,
         amount: orderData.amount,
         receipt: orderData.receipt
@@ -44,7 +51,25 @@ class PaymentService {
 
       return razorpayOrder;
     } catch (error) {
-      logger.error('Razorpay order creation failed:', error);
+      logger.error('Razorpay order creation failed:', {
+        error: error.message,
+        code: error.error?.code,
+        description: error.error?.description,
+        orderData
+      });
+      
+      // For development, create a mock order if Razorpay fails
+      if (process.env.NODE_ENV === 'development') {
+        console.log('Creating mock order for development...');
+        return {
+          id: `order_test_${Date.now()}`,
+          amount: orderData.amount,
+          currency: orderData.currency || 'INR',
+          receipt: orderData.receipt,
+          status: 'created'
+        };
+      }
+      
       throw error;
     }
   }

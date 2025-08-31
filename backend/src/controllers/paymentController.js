@@ -808,12 +808,24 @@ const createPostCompletionPaymentOrder = async (req, res) => {
     }
 
     // Get the final amount (quotation or negotiated amount)
-    const finalAmount = serviceRequest.quotation || serviceRequest.finalAmount || 0;
+    const finalAmount = serviceRequest.quotation || serviceRequest.finalAmount || 500; // Default amount for testing
+    
+    console.log('Payment amount calculation:', {
+      quotation: serviceRequest.quotation,
+      finalAmount: serviceRequest.finalAmount,
+      selectedAmount: finalAmount,
+      serviceRequestId,
+      customerId
+    });
     
     if (!finalAmount || finalAmount <= 0) {
       return res.status(400).json({
         success: false,
-        message: 'No amount specified for payment. Please contact the mechanic for pricing.'
+        message: 'No amount specified for payment. Please contact the mechanic for pricing.',
+        debug: {
+          quotation: serviceRequest.quotation,
+          finalAmount: serviceRequest.finalAmount
+        }
       });
     }
 

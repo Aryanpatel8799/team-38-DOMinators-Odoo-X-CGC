@@ -961,7 +961,7 @@ const acceptRequest = async (req, res) => {
     request.status = 'assigned';
     request.acceptedAt = new Date();
     request.estimatedArrival = estimatedArrival || 30; // Default 30 minutes if not provided
-    nd ;
+    request.quotation = finalQuotation;
     
     // Add timeline entry
     if (!request.history) request.history = [];

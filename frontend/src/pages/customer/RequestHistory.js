@@ -15,7 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import RequestTracker from '../../components/customer/RequestTracker';
-import UnifiedPaymentModal from '../../components/payment/UnifiedPaymentModal';
+import DemoPaymentModal from '../../components/payment/DemoPaymentModal';
 import AddReview from '../../components/customer/AddReview';
 import ChatModal from '../../components/chat/ChatModal';
 import requestService from '../../services/requestService';
@@ -132,14 +132,8 @@ const RequestHistory = () => {
   const handlePaymentSuccess = (paymentData) => {
     setShowPaymentModal(false);
     setPaymentRequest(null);
-    toast.success('Payment completed successfully!');
+    toast.success('Demo payment completed successfully!');
     fetchRequests(); // Refresh the list
-  };
-
-  const handlePaymentFailure = (error) => {
-    setShowPaymentModal(false);
-    setPaymentRequest(null);
-    toast.error('Payment failed. Please try again.');
   };
 
   const handleReview = (request) => {
@@ -464,17 +458,7 @@ const RequestHistory = () => {
                       </Button>
                     )}
                     
-                    {canPay(request) && (
-                      <Button
-                        variant="success"
-                        size="sm"
-                        onClick={() => handlePayment(request)}
-                        icon={<CreditCardIcon className="h-4 w-4" />}
-                      >
-                        Pay Now
-                      </Button>
-                    )}
-
+                    
                     {canReview(request) && (
                       <Button
                         variant="warning"
@@ -503,6 +487,18 @@ const RequestHistory = () => {
                         Chat
                       </Button>
                     )}
+
+                    {/* Demo Payment Button for completed requests */}
+                    {request.status === 'completed' && (
+                      <Button
+                        variant="success"
+                        size="sm"
+                        onClick={() => handlePayment(request)}
+                        icon={<CreditCardIcon className="h-4 w-4" />}
+                      >
+                        Payment
+                      </Button>
+                    )}
                     
                     <Button
                       variant="outline"
@@ -522,35 +518,23 @@ const RequestHistory = () => {
 
       {/* Payment Modal */}
       {showPaymentModal && paymentRequest && (
-        <UnifiedPaymentModal
+        <DemoPaymentModal
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
           serviceRequest={paymentRequest}
-          paymentType="post-completion"
           onPaymentSuccess={handlePaymentSuccess}
-          onPaymentFailure={handlePaymentFailure}
         />
       )}
 
       {/* Review Modal */}
       {showReviewModal && selectedRequest && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowReviewModal(false)}></div>
-
-            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
-              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                <AddReview
-                  mechanicId={getMechanicInfo(selectedRequest)?._id}
-                  mechanicName={getMechanicInfo(selectedRequest)?.name || 'Mechanic'}
-                  requestId={selectedRequest._id}
-                  onSuccess={handleReviewSuccess}
-                  onClose={() => setShowReviewModal(false)}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
+        <AddReview
+          mechanicId={getMechanicInfo(selectedRequest)?._id}
+          mechanicName={getMechanicInfo(selectedRequest)?.name || 'Mechanic'}
+          requestId={selectedRequest._id}
+          onSuccess={handleReviewSuccess}
+          onClose={() => setShowReviewModal(false)}
+        />
       )}
 
       {/* Chat Modal */}

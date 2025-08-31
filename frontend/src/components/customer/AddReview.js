@@ -2,49 +2,19 @@ import React, { useState } from 'react';
 import { 
   StarIcon,
   XMarkIcon,
-  CheckIcon,
-  ExclamationTriangleIcon
+  CheckIcon
 } from '@heroicons/react/24/outline';
 import Button from '../common/Button';
-import { useAuth } from '../../contexts/AuthContext';
 import reviewService from '../../services/reviewService';
 import toast from 'react-hot-toast';
 
 const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) => {
-  const { user } = useAuth();
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
-  const [comment, setComment] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [selectedCategories, setSelectedCategories] = useState([]);
-
-  const reviewCategories = [
-    { id: 'professionalism', label: 'Professionalism', icon: '👔' },
-    { id: 'punctuality', label: 'Punctuality', icon: '⏰' },
-    { id: 'quality', label: 'Service Quality', icon: '🔧' },
-    { id: 'communication', label: 'Communication', icon: '💬' },
-    { id: 'pricing', label: 'Fair Pricing', icon: '💰' },
-    { id: 'cleanliness', label: 'Cleanliness', icon: '🧹' }
-  ];
-
-  const ratingLabels = {
-    1: 'Poor',
-    2: 'Fair',
-    3: 'Good',
-    4: 'Very Good',
-    5: 'Excellent'
-  };
 
   const handleRatingChange = (newRating) => {
     setRating(newRating);
-  };
-
-  const handleCategoryToggle = (categoryId) => {
-    setSelectedCategories(prev => 
-      prev.includes(categoryId)
-        ? prev.filter(id => id !== categoryId)
-        : [...prev, categoryId]
-    );
   };
 
   const handleSubmit = async (e) => {
@@ -55,11 +25,6 @@ const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) 
       return;
     }
 
-    if (!comment.trim()) {
-      toast.error('Please write a review comment');
-      return;
-    }
-
     try {
       setSubmitting(true);
       
@@ -67,8 +32,7 @@ const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) 
         serviceRequestId: requestId,
         mechanicId,
         rating,
-        comment: comment.trim(),
-        tags: selectedCategories
+        comment: `Rated ${rating} stars`
       };
 
       const response = await reviewService.submitReview(reviewData);
@@ -100,11 +64,13 @@ const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) 
           onClick={() => handleRatingChange(starValue)}
           onMouseEnter={() => setHoveredRating(starValue)}
           onMouseLeave={() => setHoveredRating(0)}
-          className="focus:outline-none"
+          className="focus:outline-none transition-all duration-200 hover:scale-110 transform"
         >
           <StarIcon
-            className={`h-8 w-8 transition-colors ${
-              isFilled ? 'text-yellow-400 fill-current' : 'text-gray-300'
+            className={`h-12 w-12 transition-all duration-200 ${
+              isFilled 
+                ? 'text-yellow-400 fill-current drop-shadow-lg' 
+                : 'text-gray-300 hover:text-yellow-200'
             }`}
           />
         </button>
@@ -113,128 +79,44 @@ const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) 
   };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
-        <div className="p-6">
-          {/* Header */}
-          <div className="flex justify-between items-start mb-6">
-            <div>
-              <h2 className="text-xl font-bold text-gray-900">Rate Your Experience</h2>
-              <p className="text-gray-600">Help other customers by sharing your experience</p>
-            </div>
-            <Button
-              variant="secondary"
+    <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+      <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl transform transition-all duration-300 scale-100">
+        {/* Header */}
+        <div className="bg-gradient-to-r from-blue-600 to-purple-600 text-white p-6 rounded-t-2xl">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xl font-bold">Rate Your Experience</h2>
+            <button
               onClick={onClose}
-              icon={<XMarkIcon className="h-4 w-4" />}
+              className="text-white hover:text-blue-200 transition-colors duration-200 p-2 rounded-full hover:bg-white hover:bg-opacity-20"
             >
-              Close
-            </Button>
+              <XMarkIcon className="h-5 w-5" />
+            </button>
           </div>
+        </div>
 
+        <div className="p-8">
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Mechanic Info */}
-            <div className="bg-gray-50 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">Service Details</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div>
-                  <span className="text-gray-600">Mechanic:</span>
-                  <span className="ml-2 font-medium text-gray-900">{mechanicName}</span>
+            {/* Stars */}
+            <div className="text-center">
+              <div className="flex justify-center space-x-4 mb-6">
+                {renderStars()}
+              </div>
+              
+              {rating > 0 && (
+                <div className="text-lg font-semibold text-gray-900">
+                  {rating}/5 stars
                 </div>
-                <div>
-                  <span className="text-gray-600">Request ID:</span>
-                  <span className="ml-2 font-medium text-gray-900">#{requestId?.slice(-6)}</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Rating */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                Overall Rating *
-              </label>
-              <div className="flex items-center space-x-4">
-                <div className="flex space-x-1">
-                  {renderStars()}
-                </div>
-                {rating > 0 && (
-                  <span className="text-sm font-medium text-gray-900">
-                    {rating}/5 - {ratingLabels[rating]}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Categories */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-3">
-                What went well? (Optional)
-              </label>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                {reviewCategories.map((category) => (
-                  <button
-                    key={category.id}
-                    type="button"
-                    onClick={() => handleCategoryToggle(category.id)}
-                    className={`flex items-center space-x-2 px-3 py-2 rounded-lg border text-sm transition-colors ${
-                      selectedCategories.includes(category.id)
-                        ? 'border-primary-500 bg-primary-50 text-primary-700'
-                        : 'border-gray-300 text-gray-700 hover:border-gray-400'
-                    }`}
-                  >
-                    <span>{category.icon}</span>
-                    <span>{category.label}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Comment */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Your Review *
-              </label>
-              <textarea
-                value={comment}
-                onChange={(e) => setComment(e.target.value)}
-                placeholder="Share your experience with this mechanic. What did you like or dislike? Any suggestions for improvement?"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary-500"
-                rows={4}
-                maxLength={500}
-                required
-              />
-              <div className="flex justify-between items-center mt-1">
-                <p className="text-xs text-gray-500">
-                  Be specific and helpful to other customers
-                </p>
-                <span className="text-xs text-gray-500">
-                  {comment.length}/500
-                </span>
-              </div>
-            </div>
-
-            {/* Guidelines */}
-            <div className="bg-blue-50 rounded-lg p-4">
-              <div className="flex items-start space-x-2">
-                <ExclamationTriangleIcon className="h-5 w-5 text-blue-500 mt-0.5" />
-                <div>
-                  <h4 className="text-sm font-medium text-blue-900 mb-1">Review Guidelines</h4>
-                  <ul className="text-xs text-blue-800 space-y-1">
-                    <li>• Be honest and constructive in your feedback</li>
-                    <li>• Focus on the service quality and experience</li>
-                    <li>• Avoid personal attacks or inappropriate language</li>
-                    <li>• Your review helps other customers make informed decisions</li>
-                  </ul>
-                </div>
-              </div>
+              )}
             </div>
 
             {/* Submit Button */}
-            <div className="flex justify-end space-x-3 pt-4 border-t">
+            <div className="flex justify-end space-x-4">
               <Button
                 type="button"
                 variant="secondary"
                 onClick={onClose}
                 disabled={submitting}
+                className="px-6 py-3"
               >
                 Cancel
               </Button>
@@ -242,9 +124,11 @@ const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) 
                 type="submit"
                 variant="primary"
                 loading={submitting}
-                icon={!submitting && <CheckIcon className="h-4 w-4" />}
+                icon={!submitting && <CheckIcon className="h-5 w-5" />}
+                disabled={rating === 0}
+                className="px-8 py-3 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               >
-                Submit Review
+                {submitting ? 'Submitting...' : 'Submit'}
               </Button>
             </div>
           </form>
