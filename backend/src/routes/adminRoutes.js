@@ -185,6 +185,39 @@ router.get('/system/health', adminController.getSystemHealth);
  */
 router.get('/users', adminController.getUsers);
 
+// Test endpoint to check users
+router.get('/users/test', async (req, res) => {
+  try {
+    const User = require('../models/User');
+    const totalUsers = await User.countDocuments();
+    const sampleUsers = await User.find().limit(10).select('name email role isActive isVerified createdAt').lean();
+    
+    // Count by role
+    const customers = await User.countDocuments({ role: 'customer' });
+    const mechanics = await User.countDocuments({ role: 'mechanic' });
+    const admins = await User.countDocuments({ role: 'admin' });
+    
+    res.json({
+      success: true,
+      message: 'Test endpoint working',
+      data: {
+        totalUsers,
+        customers,
+        mechanics,
+        admins,
+        sampleUsers
+      }
+    });
+  } catch (error) {
+    console.error('Test endpoint error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Test endpoint failed',
+      error: error.message
+    });
+  }
+});
+
 /**
  * @swagger
  * /api/admin/users/{userId}/status:

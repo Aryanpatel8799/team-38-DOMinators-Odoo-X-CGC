@@ -5,9 +5,7 @@ import {
   PhoneIcon, 
   MapPinIcon,
   CameraIcon,
-  PencilIcon,
-  PlusIcon,
-  TrashIcon
+  PencilIcon
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
@@ -25,16 +23,7 @@ const CustomerProfile = () => {
     phone: '',
     address: ''
   });
-  const [vehicles, setVehicles] = useState([]);
-  const [showAddVehicle, setShowAddVehicle] = useState(false);
-  const [newVehicle, setNewVehicle] = useState({
-    type: 'car',
-    make: '',
-    model: '',
-    year: new Date().getFullYear(),
-    plate: '',
-    color: ''
-  });
+
 
   useEffect(() => {
     if (user) {
@@ -45,18 +34,7 @@ const CustomerProfile = () => {
         address: user.address || ''
       });
     }
-    fetchVehicles();
   }, [user]);
-
-  const fetchVehicles = async () => {
-    try {
-      // This would fetch user's vehicles from the API
-      // For now, we'll use mock data
-      setVehicles([]);
-    } catch (error) {
-      console.error('Error fetching vehicles:', error);
-    }
-  };
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
@@ -66,13 +44,7 @@ const CustomerProfile = () => {
     }));
   };
 
-  const handleVehicleChange = (e) => {
-    const { name, value } = e.target;
-    setNewVehicle(prev => ({
-      ...prev,
-      [name]: value
-    }));
-  };
+
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -100,43 +72,6 @@ const CustomerProfile = () => {
       toast.error('Failed to update profile');
     } finally {
       setLoading(false);
-    }
-  };
-
-  const handleAddVehicle = async (e) => {
-    e.preventDefault();
-    
-    if (!newVehicle.make.trim() || !newVehicle.model.trim() || !newVehicle.plate.trim()) {
-      toast.error('Please fill in all required vehicle fields');
-      return;
-    }
-
-    try {
-      // Add vehicle API call would go here
-      setVehicles([...vehicles, { ...newVehicle, _id: Date.now().toString() }]);
-      setNewVehicle({
-        type: 'car',
-        make: '',
-        model: '',
-        year: new Date().getFullYear(),
-        plate: '',
-        color: ''
-      });
-      setShowAddVehicle(false);
-      toast.success('Vehicle added successfully!');
-    } catch (error) {
-      console.error('Error adding vehicle:', error);
-      toast.error('Failed to add vehicle');
-    }
-  };
-
-  const handleRemoveVehicle = async (vehicleId) => {
-    try {
-      setVehicles(vehicles.filter(v => v._id !== vehicleId));
-      toast.success('Vehicle removed successfully!');
-    } catch (error) {
-      console.error('Error removing vehicle:', error);
-      toast.error('Failed to remove vehicle');
     }
   };
 
@@ -249,141 +184,6 @@ const CustomerProfile = () => {
         </form>
       </div>
 
-      {/* Vehicles Section */}
-      <div className="bg-white rounded-lg shadow-card p-6">
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-lg font-semibold text-secondary-900">My Vehicles</h2>
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() => setShowAddVehicle(true)}
-            icon={<PlusIcon className="w-4 h-4" />}
-          >
-            Add Vehicle
-          </Button>
-        </div>
-
-        {vehicles.length === 0 ? (
-          <div className="text-center py-8">
-            <div className="mx-auto w-12 h-12 bg-secondary-100 rounded-lg flex items-center justify-center mb-4">
-              <span className="text-secondary-600 text-xl">🚗</span>
-            </div>
-            <h3 className="text-sm font-medium text-secondary-900">No vehicles added</h3>
-            <p className="text-sm text-secondary-500 mt-1">
-              Add your vehicles for faster service requests
-            </p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {vehicles.map((vehicle) => (
-              <div key={vehicle._id} className="border border-secondary-200 rounded-lg p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="font-medium text-secondary-900">
-                      {vehicle.year} {vehicle.make} {vehicle.model}
-                    </h3>
-                    <p className="text-sm text-secondary-600">
-                      {vehicle.plate} • {vehicle.color} {vehicle.type}
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => handleRemoveVehicle(vehicle._id)}
-                    className="text-danger-600 hover:text-danger-700"
-                  >
-                    <TrashIcon className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Add Vehicle Form */}
-        {showAddVehicle && (
-          <div className="mt-6 border-t border-secondary-200 pt-6">
-            <h3 className="text-md font-medium text-secondary-900 mb-4">Add New Vehicle</h3>
-            <form onSubmit={handleAddVehicle} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-secondary-700 mb-1">
-                    Vehicle Type
-                  </label>
-                  <select
-                    name="type"
-                    value={newVehicle.type}
-                    onChange={handleVehicleChange}
-                    className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-                    required
-                  >
-                    <option value="car">Car</option>
-                    <option value="motorcycle">Motorcycle</option>
-                    <option value="truck">Truck</option>
-                    <option value="bus">Bus</option>
-                  </select>
-                </div>
-                
-                <Input
-                  label="Make"
-                  name="make"
-                  value={newVehicle.make}
-                  onChange={handleVehicleChange}
-                  placeholder="e.g., Toyota"
-                  required
-                />
-                
-                <Input
-                  label="Model"
-                  name="model"
-                  value={newVehicle.model}
-                  onChange={handleVehicleChange}
-                  placeholder="e.g., Camry"
-                  required
-                />
-                
-                <Input
-                  label="Year"
-                  name="year"
-                  type="number"
-                  value={newVehicle.year}
-                  onChange={handleVehicleChange}
-                  min="1900"
-                  max={new Date().getFullYear() + 1}
-                />
-                
-                <Input
-                  label="License Plate"
-                  name="plate"
-                  value={newVehicle.plate}
-                  onChange={handleVehicleChange}
-                  placeholder="e.g., ABC-123"
-                  required
-                />
-                
-                <Input
-                  label="Color"
-                  name="color"
-                  value={newVehicle.color}
-                  onChange={handleVehicleChange}
-                  placeholder="e.g., Red"
-                />
-              </div>
-              
-              <div className="flex justify-end space-x-3">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => setShowAddVehicle(false)}
-                >
-                  Cancel
-                </Button>
-                <Button type="submit" variant="primary">
-                  Add Vehicle
-                </Button>
-              </div>
-            </form>
-          </div>
-        )}
-      </div>
     </div>
   );
 };

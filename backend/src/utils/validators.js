@@ -193,7 +193,8 @@ const paymentValidation = {
 // Review validation schemas
 const reviewValidation = {
   create: Joi.object({
-    requestId: commonSchemas.objectId.required(),
+    serviceRequestId: commonSchemas.objectId.required(),
+    mechanicId: commonSchemas.objectId.required(),
     rating: Joi.number().integer().min(1).max(5).required(),
     comment: Joi.string().max(1000).optional(),
     serviceQuality: Joi.number().integer().min(1).max(5).optional(),

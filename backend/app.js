@@ -21,6 +21,7 @@ const mechanicRoutes = require('./src/routes/mechanicRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
 const chatRoutes = require('./src/routes/chatRoutes');
+const reviewRoutes = require('./src/routes/reviewRoutes');
 
 const app = express();
 
@@ -147,6 +148,7 @@ app.use('/api/mechanic', mechanicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/reviews', reviewRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {

@@ -45,7 +45,9 @@ const UserManagement = () => {
         limit: pagination.limit
       };
 
+      console.log('Fetching users with params:', params);
       const response = await adminService.getUsers(params);
+      console.log('Users response:', response);
       
       if (response.success) {
         setUsers(response.data.users || []);
@@ -54,10 +56,19 @@ const UserManagement = () => {
           totalPages: response.data.pagination?.totalPages || 0,
           totalItems: response.data.pagination?.totalItems || 0
         }));
+      } else {
+        console.error('API returned success: false:', response);
+        toast.error(response.message || 'Failed to fetch users');
+        setUsers([]);
+        setPagination(prev => ({
+          ...prev,
+          totalPages: 0,
+          totalItems: 0
+        }));
       }
     } catch (error) {
       console.error('Error fetching users:', error);
-      toast.error('Failed to fetch users');
+      toast.error(error.message || 'Failed to fetch users');
       setUsers([]);
       setPagination(prev => ({
         ...prev,

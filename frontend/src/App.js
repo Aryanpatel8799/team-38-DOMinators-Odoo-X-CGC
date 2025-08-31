@@ -120,7 +120,7 @@ function App() {
           />
 
           {/* Debug component (only in development) */}
-          <AuthDebug />
+          {/* <AuthDebug /> */}
         </div>
       </Router>
     </AuthProvider>

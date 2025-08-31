@@ -31,7 +31,9 @@ class PaymentService {
         amount: orderData.amount,
         currency: orderData.currency || 'INR',
         receipt: orderData.receipt,
-        notes: orderData.notes || {}
+        notes: orderData.notes || {},
+        partial_payment: false,
+        capture_method: 'automatic'
       });
 
       logger.info('Razorpay order created:', {
@@ -43,6 +45,76 @@ class PaymentService {
       return razorpayOrder;
     } catch (error) {
       logger.error('Razorpay order creation failed:', error);
+      throw error;
+    }
+  }
+
+  // Create payment intent for advanced payment flows
+  async createPaymentIntent(paymentData) {
+    try {
+      const { amount, currency = 'INR', customerId, serviceRequestId } = paymentData;
+      
+      // Create Razorpay order
+      const order = await this.createOrder({
+        amount: amount * 100, // Convert to paise
+        currency,
+        receipt: `intent_${serviceRequestId}_${Date.now()}`,
+        notes: {
+          customerId,
+          serviceRequestId,
+          paymentType: 'intent'
+        }
+      });
+
+      return {
+        orderId: order.id,
+        amount: amount,
+        currency,
+        status: 'created'
+      };
+    } catch (error) {
+      logger.error('Error creating payment intent:', error);
+      throw error;
+    }
+  }
+
+  // Verify payment signature
+  verifyPaymentSignature(orderId, paymentId, signature) {
+    try {
+      const body = orderId + '|' + paymentId;
+      const expectedSignature = crypto
+        .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
+        .update(body.toString())
+        .digest('hex');
+
+      return expectedSignature === signature;
+    } catch (error) {
+      logger.error('Error verifying payment signature:', error);
+      return false;
+    }
+  }
+
+  // Process refund
+  async processRefund(paymentId, amount, reason) {
+    try {
+      const refund = await this.razorpay.payments.refund(paymentId, {
+        amount: amount * 100, // Convert to paise
+        speed: 'normal',
+        notes: {
+          reason: reason
+        }
+      });
+
+      logger.info('Refund processed successfully:', {
+        paymentId,
+        refundId: refund.id,
+        amount,
+        reason
+      });
+
+      return refund;
+    } catch (error) {
+      logger.error('Error processing refund:', error);
       throw error;
     }
   }

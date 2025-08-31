@@ -31,6 +31,18 @@ const { paymentLimiter } = require('../middlewares/rateLimitMiddleware');
  */
 router.post('/webhook/razorpay', paymentController.handleRazorpayWebhook);
 
+// Test endpoint to check payment system
+router.get('/test', (req, res) => {
+  res.json({
+    success: true,
+    message: 'Payment system is working',
+    data: {
+      razorpayConfigured: !!(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET),
+      timestamp: new Date().toISOString()
+    }
+  });
+});
+
 // Apply authentication to remaining routes
 router.use(authenticateToken);
 
@@ -103,6 +115,7 @@ router.post('/create-order',
 router.post('/create-post-completion-order',
   authorize(['customer']),
   paymentLimiter,
+  validate(schemas.postCompletionPayment),
   paymentController.createPostCompletionPaymentOrder
 );
 
@@ -185,6 +198,110 @@ router.post('/verify',
 router.get('/history',
   authorize(['customer', 'mechanic', 'admin']),
   paymentController.getPaymentHistory
+);
+
+/**
+ * @swagger
+ * /api/payments/methods:
+ *   get:
+ *     summary: Get available payment methods
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Payment methods retrieved successfully
+ */
+router.get('/methods',
+  authorize(['customer']),
+  paymentController.getPaymentMethods
+);
+
+/**
+ * @swagger
+ * /api/payments/create-intent:
+ *   post:
+ *     summary: Create payment intent for advanced payment flows
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - serviceRequestId
+ *               - amount
+ *             properties:
+ *               serviceRequestId:
+ *                 type: string
+ *               amount:
+ *                 type: number
+ *               currency:
+ *                 type: string
+ *                 default: INR
+ *     responses:
+ *       201:
+ *         description: Payment intent created successfully
+ */
+router.post('/create-intent',
+  authorize(['customer']),
+  paymentLimiter,
+  paymentController.createPaymentIntent
+);
+
+/**
+ * @swagger
+ * /api/payments/confirm:
+ *   post:
+ *     summary: Confirm payment after successful transaction
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - paymentId
+ *               - razorpayPaymentId
+ *               - razorpayOrderId
+ *               - razorpaySignature
+ *     responses:
+ *       200:
+ *         description: Payment confirmed successfully
+ */
+router.post('/confirm',
+  authorize(['customer']),
+  paymentController.confirmPayment
+);
+
+/**
+ * @swagger
+ * /api/payments/analytics:
+ *   get:
+ *     summary: Get payment analytics
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [day, week, month, year]
+ *           default: month
+ *     responses:
+ *       200:
+ *         description: Payment analytics retrieved successfully
+ */
+router.get('/analytics',
+  authorize(['admin']),
+  paymentController.getPaymentAnalytics
 );
 
 /**

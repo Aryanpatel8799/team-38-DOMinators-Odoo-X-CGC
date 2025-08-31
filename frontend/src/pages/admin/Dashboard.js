@@ -41,18 +41,45 @@ const AdminDashboard = () => {
     try {
       setLoading(true);
       
-      // Fetch dashboard statistics from API
-      const [dashboardResponse, verificationsResponse, healthResponse] = await Promise.all([
-        adminService.getDashboardStats(),
-        adminService.getVerifications({ status: 'pending' }),
-        adminService.getSystemHealth()
-      ]);
+      // Fetch dashboard statistics from API with individual error handling
+      let dashboardResponse, verificationsResponse, healthResponse;
+      
+      try {
+        dashboardResponse = await adminService.getDashboardStats();
+      } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
+        dashboardResponse = { success: false, data: {} };
+      }
+      
+      try {
+        verificationsResponse = await adminService.getVerifications({ status: 'pending' });
+      } catch (error) {
+        console.error('Error fetching verifications:', error);
+        verificationsResponse = { success: false, data: { verifications: [] } };
+      }
+      
+      try {
+        healthResponse = await adminService.getSystemHealth();
+      } catch (error) {
+        console.error('Error fetching system health:', error);
+        healthResponse = { success: false, data: {} };
+      }
 
       if (dashboardResponse.success) {
         const dashboardData = dashboardResponse.data;
         setStats({
           ...dashboardData,
           pendingVerifications: verificationsResponse.data?.verifications?.length || 0
+        });
+      } else {
+        // Set default stats if dashboard fails
+        setStats({
+          totalUsers: { total: 0, customers: 0, mechanics: 0, admins: 0 },
+          serviceRequests: { total: 0, pending: 0, active: 0, completed: 0, cancelled: 0 },
+          payments: { totalAmount: 0, totalTransactions: 0, recentTransactions: [] },
+          reviews: { totalReviews: 0, averageRating: 0 },
+          topMechanics: [],
+          pendingVerifications: 0
         });
       }
 
@@ -70,7 +97,7 @@ const AdminDashboard = () => {
           activity.push({
             type: 'payment',
             title: 'Payment received',
-            description: `${transaction.customer?.name || 'Customer'} paid ${formatCurrency(transaction.amount)}`,
+            description: `${transaction.customerId?.name || 'Customer'} paid ${formatCurrency(transaction.amount)}`,
             time: new Date(transaction.createdAt).toLocaleString(),
             icon: 'payment',
             status: transaction.status
@@ -84,7 +111,7 @@ const AdminDashboard = () => {
           activity.push({
             type: 'verification',
             title: 'New verification request',
-            description: `${verification.mechanic?.name || 'Mechanic'} submitted verification`,
+            description: `${verification.mechanicId?.name || 'Mechanic'} submitted verification`,
             time: new Date(verification.createdAt).toLocaleString(),
             icon: 'verification',
             status: verification.status
@@ -95,8 +122,18 @@ const AdminDashboard = () => {
       setRecentActivity(activity.slice(0, 10));
 
     } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
+      console.error('Error in fetchDashboardStats:', error);
       toast.error('Failed to load dashboard data');
+      
+      // Set default stats on complete failure
+      setStats({
+        totalUsers: { total: 0, customers: 0, mechanics: 0, admins: 0 },
+        serviceRequests: { total: 0, pending: 0, active: 0, completed: 0, cancelled: 0 },
+        payments: { totalAmount: 0, totalTransactions: 0, recentTransactions: [] },
+        reviews: { totalReviews: 0, averageRating: 0 },
+        topMechanics: [],
+        pendingVerifications: 0
+      });
     } finally {
       setLoading(false);
     }

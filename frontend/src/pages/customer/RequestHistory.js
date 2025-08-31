@@ -15,7 +15,7 @@ import {
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import RequestTracker from '../../components/customer/RequestTracker';
-import PaymentModal from '../../components/payment/PaymentModal';
+import UnifiedPaymentModal from '../../components/payment/UnifiedPaymentModal';
 import AddReview from '../../components/customer/AddReview';
 import ChatModal from '../../components/chat/ChatModal';
 import requestService from '../../services/requestService';
@@ -45,6 +45,7 @@ const RequestHistory = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showTracker, setShowTracker] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentRequest, setPaymentRequest] = useState(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [showChatModal, setShowChatModal] = useState(false);
   const [chatRequest, setChatRequest] = useState(null);
@@ -116,7 +117,7 @@ const RequestHistory = () => {
   };
 
   const handlePayment = (request) => {
-    setSelectedRequest(request);
+    setPaymentRequest(request);
     setShowPaymentModal(true);
   };
 
@@ -128,10 +129,17 @@ const RequestHistory = () => {
     ));
   };
 
-  const handlePaymentSuccess = () => {
+  const handlePaymentSuccess = (paymentData) => {
     setShowPaymentModal(false);
+    setPaymentRequest(null);
     toast.success('Payment completed successfully!');
     fetchRequests(); // Refresh the list
+  };
+
+  const handlePaymentFailure = (error) => {
+    setShowPaymentModal(false);
+    setPaymentRequest(null);
+    toast.error('Payment failed. Please try again.');
   };
 
   const handleReview = (request) => {
@@ -185,23 +193,38 @@ const RequestHistory = () => {
   };
 
   const canPay = (request) => {
-    return request.status === 'completed' && request.quotation && !request.paymentCompleted && request.mechanic;
+    const hasMechanic = request.mechanic || request.mechanicId;
+    return request.status === 'completed' && 
+           (request.quotation || request.finalAmount) && 
+           request.paymentStatus !== 'paid' && 
+           hasMechanic;
   };
 
   const canReview = (request) => {
-    const canReviewResult = request.status === 'completed' && request.mechanic && !request.review;
+    // Check if request has a mechanic (either mechanic or mechanicId)
+    const hasMechanic = request.mechanic || request.mechanicId;
+    const canReviewResult = request.status === 'completed' && hasMechanic && !request.reviewId;
+    
     console.log('Can review check:', {
       requestId: request._id,
       status: request.status,
-      hasMechanic: !!request.mechanic,
-      hasReview: !!request.review,
+      hasMechanic: !!hasMechanic,
+      mechanic: request.mechanic,
+      mechanicId: request.mechanicId,
+      hasReview: !!request.reviewId,
       canReview: canReviewResult
     });
     return Boolean(canReviewResult);
   };
 
+  // Helper function to get mechanic info
+  const getMechanicInfo = (request) => {
+    return request.mechanic || request.mechanicId;
+  };
+
   const canChat = (request) => {
-    return request.mechanic && ['assigned', 'enroute', 'in_progress', 'completed'].includes(request.status);
+    const hasMechanic = request.mechanic || request.mechanicId;
+    return hasMechanic && ['assigned', 'enroute', 'in_progress', 'completed'].includes(request.status);
   };
 
   if (showTracker && selectedRequest) {
@@ -404,15 +427,15 @@ const RequestHistory = () => {
                         </p>
                       )}
 
-                      {request.mechanic && (
+                      {getMechanicInfo(request) && (
                         <div className="mt-3 p-3 bg-secondary-50 rounded-lg">
                           <div className="flex items-center justify-between">
                             <div>
                               <p className="text-sm font-medium text-secondary-900">
-                                Assigned to: {request.mechanic.name}
+                                Assigned to: {getMechanicInfo(request)?.name || 'Mechanic'}
                               </p>
                               <p className="text-xs text-secondary-600">
-                                ⭐ {request.mechanic.rating?.toFixed(1) || 'New'} • {request.mechanic.phone}
+                                ⭐ {getMechanicInfo(request)?.rating?.toFixed(1) || 'New'} • {getMechanicInfo(request)?.phone || 'Contact available'}
                               </p>
                             </div>
                             {request.quotation && (
@@ -463,6 +486,13 @@ const RequestHistory = () => {
                       </Button>
                     )}
 
+                    {request.reviewId && (
+                      <div className="flex items-center text-success-600 text-sm">
+                        <StarIcon className="h-4 w-4 mr-1" />
+                        Reviewed
+                      </div>
+                    )}
+
                     {canChat(request) && (
                       <Button
                         variant="outline"
@@ -491,13 +521,14 @@ const RequestHistory = () => {
       </div>
 
       {/* Payment Modal */}
-      {showPaymentModal && selectedRequest && (
-        <PaymentModal
+      {showPaymentModal && paymentRequest && (
+        <UnifiedPaymentModal
           isOpen={showPaymentModal}
           onClose={() => setShowPaymentModal(false)}
-          serviceRequest={selectedRequest}
-          amount={selectedRequest.quotation}
+          serviceRequest={paymentRequest}
+          paymentType="post-completion"
           onPaymentSuccess={handlePaymentSuccess}
+          onPaymentFailure={handlePaymentFailure}
         />
       )}
 
@@ -510,10 +541,11 @@ const RequestHistory = () => {
             <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
               <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
                 <AddReview
-                  mechanicId={selectedRequest.mechanic._id}
+                  mechanicId={getMechanicInfo(selectedRequest)?._id}
+                  mechanicName={getMechanicInfo(selectedRequest)?.name || 'Mechanic'}
                   requestId={selectedRequest._id}
                   onSuccess={handleReviewSuccess}
-                  onCancel={() => setShowReviewModal(false)}
+                  onClose={() => setShowReviewModal(false)}
                 />
               </div>
             </div>
@@ -525,7 +557,7 @@ const RequestHistory = () => {
       <ChatModal
         isOpen={showChatModal}
         onClose={() => setShowChatModal(false)}
-        mechanic={chatRequest?.mechanic}
+        mechanic={chatRequest ? getMechanicInfo(chatRequest) : null}
         serviceRequestId={chatRequest?._id}
       />
     </div>

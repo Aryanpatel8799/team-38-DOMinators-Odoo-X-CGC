@@ -83,6 +83,46 @@ const paymentApi = {
     } catch (error) {
       throw error;
     }
+  },
+
+  // Get payment methods
+  getPaymentMethods: async () => {
+    try {
+      const response = await apiClient.get('/payments/methods');
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Create payment intent (for advanced payment flows)
+  createPaymentIntent: async (paymentData) => {
+    try {
+      const response = await apiClient.post('/payments/create-intent', paymentData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Confirm payment
+  confirmPayment: async (paymentData) => {
+    try {
+      const response = await apiClient.post('/payments/confirm', paymentData);
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
+  },
+
+  // Get payment analytics
+  getPaymentAnalytics: async (params = {}) => {
+    try {
+      const response = await apiClient.get('/payments/analytics', { params });
+      return response.data;
+    } catch (error) {
+      throw error;
+    }
   }
 };
 

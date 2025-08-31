@@ -904,11 +904,245 @@ const createPostCompletionPaymentOrder = async (req, res) => {
   }
 };
 
+/**
+ * Get available payment methods
+ */
+const getPaymentMethods = async (req, res) => {
+  try {
+    const paymentMethods = [
+      {
+        id: 'card',
+        name: 'Credit/Debit Card',
+        description: 'Pay with Visa, MasterCard, RuPay',
+        icon: 'credit-card',
+        enabled: true
+      },
+      {
+        id: 'upi',
+        name: 'UPI',
+        description: 'Pay with any UPI app',
+        icon: 'mobile',
+        enabled: true
+      },
+      {
+        id: 'netbanking',
+        name: 'Net Banking',
+        description: 'Pay with your bank account',
+        icon: 'bank',
+        enabled: true
+      },
+      {
+        id: 'wallet',
+        name: 'Digital Wallet',
+        description: 'Pay with Paytm, PhonePe, etc.',
+        icon: 'wallet',
+        enabled: true
+      }
+    ];
+
+    res.json({
+      success: true,
+      message: 'Payment methods retrieved successfully',
+      data: paymentMethods
+    });
+
+  } catch (error) {
+    logger.error('Error fetching payment methods:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment methods',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Create payment intent for advanced payment flows
+ */
+const createPaymentIntent = async (req, res) => {
+  try {
+    const { serviceRequestId, amount, currency = 'INR' } = req.body;
+    const customerId = req.user.id;
+
+    // Validate service request
+    const serviceRequest = await ServiceRequest.findOne({
+      _id: serviceRequestId,
+      customerId: customerId
+    });
+
+    if (!serviceRequest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service request not found'
+      });
+    }
+
+    // Create payment intent
+    const paymentIntent = await paymentService.createPaymentIntent({
+      amount,
+      currency,
+      customerId,
+      serviceRequestId
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Payment intent created successfully',
+      data: paymentIntent
+    });
+
+  } catch (error) {
+    logger.error('Error creating payment intent:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment intent',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Confirm payment after successful transaction
+ */
+const confirmPayment = async (req, res) => {
+  try {
+    const { paymentId, razorpayPaymentId, razorpayOrderId, razorpaySignature } = req.body;
+    const customerId = req.user.id;
+
+    // Verify signature
+    const isValidSignature = paymentService.verifyPaymentSignature(
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature
+    );
+
+    if (!isValidSignature) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid payment signature'
+      });
+    }
+
+    // Update payment record
+    const payment = await Payment.findOneAndUpdate(
+      { _id: paymentId, customerId },
+      {
+        status: 'success',
+        razorpayPaymentId,
+        razorpaySignature,
+        paidAt: new Date()
+      },
+      { new: true }
+    );
+
+    if (!payment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Payment not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Payment confirmed successfully',
+      data: payment
+    });
+
+  } catch (error) {
+    logger.error('Error confirming payment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to confirm payment',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Get payment analytics (admin only)
+ */
+const getPaymentAnalytics = async (req, res) => {
+  try {
+    const { period = 'month' } = req.query;
+    
+    // Calculate date range based on period
+    const now = new Date();
+    let startDate;
+    
+    switch (period) {
+      case 'day':
+        startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        break;
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'month':
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    // Get payment statistics
+    const [totalPayments, successfulPayments, totalAmount] = await Promise.all([
+      Payment.countDocuments({ createdAt: { $gte: startDate } }),
+      Payment.countDocuments({ 
+        status: 'success', 
+        createdAt: { $gte: startDate } 
+      }),
+      Payment.aggregate([
+        {
+          $match: {
+            status: 'success',
+            createdAt: { $gte: startDate }
+          }
+        },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: '$amount' }
+          }
+        }
+      ])
+    ]);
+
+    const analytics = {
+      period,
+      totalPayments,
+      successfulPayments,
+      failedPayments: totalPayments - successfulPayments,
+      successRate: totalPayments > 0 ? (successfulPayments / totalPayments * 100).toFixed(2) : 0,
+      totalAmount: totalAmount[0]?.total || 0
+    };
+
+    res.json({
+      success: true,
+      message: 'Payment analytics retrieved successfully',
+      data: analytics
+    });
+
+  } catch (error) {
+    logger.error('Error fetching payment analytics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch payment analytics',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createPaymentOrder,
   verifyPayment,
   getPaymentHistory,
   getPaymentDetails,
   handleRazorpayWebhook,
-  createPostCompletionPaymentOrder
+  createPostCompletionPaymentOrder,
+  getPaymentMethods,
+  createPaymentIntent,
+  confirmPayment,
+  getPaymentAnalytics
 };

@@ -818,7 +818,7 @@ const getAssignedRequests = async (req, res) => {
     try {
       [requests, totalRequests] = await Promise.all([
         ServiceRequest.find(filter)
-          .populate('customerId', 'name email phone')
+          .populate('customerId', 'name email phone vehicles')
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(parseInt(limit))
@@ -830,7 +830,7 @@ const getAssignedRequests = async (req, res) => {
       // Fallback to simple query
       [requests, totalRequests] = await Promise.all([
         ServiceRequest.find({ mechanicId: mechanicId })
-          .populate('customerId', 'name email phone')
+          .populate('customerId', 'name email phone vehicles')
           .sort({ createdAt: -1 })
           .skip(skip)
           .limit(parseInt(limit))
@@ -961,7 +961,7 @@ const acceptRequest = async (req, res) => {
     request.status = 'assigned';
     request.acceptedAt = new Date();
     request.estimatedArrival = estimatedArrival || 30; // Default 30 minutes if not provided
-    request.quotation = finalQuotation;
+    nd ;
     
     // Add timeline entry
     if (!request.history) request.history = [];

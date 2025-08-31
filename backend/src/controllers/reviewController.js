@@ -111,8 +111,8 @@ const createReview = async (req, res) => {
     // Validate service request
     const serviceRequest = await ServiceRequest.findOne({
       _id: serviceRequestId,
-      customer: customerId,
-      assignedMechanic: mechanicId,
+      customerId: customerId,
+      mechanicId: mechanicId,
       status: 'completed'
     });
 
@@ -125,8 +125,8 @@ const createReview = async (req, res) => {
 
     // Check if review already exists
     const existingReview = await Review.findOne({
-      serviceRequest: serviceRequestId,
-      customer: customerId
+      requestId: serviceRequestId,
+      customerId: customerId
     });
 
     if (existingReview) {
@@ -152,9 +152,9 @@ const createReview = async (req, res) => {
 
     // Create review
     const review = new Review({
-      customer: customerId,
-      mechanic: mechanicId,
-      serviceRequest: serviceRequestId,
+      customerId: customerId,
+      mechanicId: mechanicId,
+      requestId: serviceRequestId,
       rating,
       comment,
       tags: tags || [],
@@ -174,9 +174,9 @@ const createReview = async (req, res) => {
 
     // Populate the review for response
     const populatedReview = await Review.findById(review._id)
-      .populate('customer', 'name email')
-      .populate('mechanic', 'name email')
-      .populate('serviceRequest', 'issueType completedAt')
+      .populate('customerId', 'name email')
+      .populate('mechanicId', 'name email')
+      .populate('requestId', 'issueType completedAt')
       .lean();
 
     // Real-time notification to mechanic
@@ -295,12 +295,12 @@ const getReviews = async (req, res) => {
     // Build filter
     const filter = {};
     
-    if (mechanicId) filter.mechanic = mechanicId;
+    if (mechanicId) filter.mechanicId = mechanicId;
     
     // Only allow customer filtering for admins or the customer themselves
     if (customerId) {
       if (req.user.role === 'admin' || req.user.id === customerId) {
-        filter.customer = customerId;
+        filter.customerId = customerId;
       } else {
         return res.status(403).json({
           success: false,
@@ -311,12 +311,12 @@ const getReviews = async (req, res) => {
     
     // If regular customer, only show their reviews
     if (req.user.role === 'customer' && !customerId) {
-      filter.customer = req.user.id;
+      filter.customerId = req.user.id;
     }
     
     // If mechanic, only show reviews for them
     if (req.user.role === 'mechanic') {
-      filter.mechanic = req.user.id;
+      filter.mechanicId = req.user.id;
     }
     
     if (rating) filter.rating = parseInt(rating);
@@ -329,9 +329,9 @@ const getReviews = async (req, res) => {
 
     const [reviews, totalReviews] = await Promise.all([
       Review.find(filter)
-        .populate('customer', 'name email')
-        .populate('mechanic', 'name email')
-        .populate('serviceRequest', 'issueType completedAt')
+        .populate('customerId', 'name email')
+        .populate('mechanicId', 'name email')
+        .populate('requestId', 'issueType completedAt')
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit))
@@ -437,17 +437,17 @@ const getReviewById = async (req, res) => {
     const filter = { _id: reviewId };
     
     if (req.user.role === 'customer') {
-      filter.customer = userId;
+      filter.customerId = userId;
     } else if (req.user.role === 'mechanic') {
-      filter.mechanic = userId;
+      filter.mechanicId = userId;
     }
     // Admin can view any review
 
     const review = await Review.findOne(filter)
-      .populate('customer', 'name email phone')
-      .populate('mechanic', 'name email phone')
+      .populate('customerId', 'name email phone')
+      .populate('mechanicId', 'name email phone')
       .populate({
-        path: 'serviceRequest',
+        path: 'requestId',
         select: 'issueType completedAt location finalAmount',
         populate: {
           path: 'assignedMechanic',
@@ -543,7 +543,7 @@ const updateReview = async (req, res) => {
 
     const review = await Review.findOne({
       _id: reviewId,
-      customer: customerId
+      customerId: customerId
     });
 
     if (!review) {
@@ -576,13 +576,13 @@ const updateReview = async (req, res) => {
       reviewId,
       { $set: updateData },
       { new: true, runValidators: true }
-    ).populate('customer', 'name email')
-      .populate('mechanic', 'name email')
-      .populate('serviceRequest', 'issueType completedAt');
+    ).populate('customerId', 'name email')
+      .populate('mechanicId', 'name email')
+      .populate('requestId', 'issueType completedAt');
 
     // Recalculate mechanic rating if rating changed
     if (rating !== undefined && rating !== oldRating) {
-      await updateMechanicRating(review.mechanic);
+      await updateMechanicRating(review.mechanicId);
     }
 
     // Real-time notification to mechanic if rating or comment changed
@@ -682,7 +682,7 @@ const deleteReview = async (req, res) => {
     }
 
     // Store mechanic ID for rating recalculation
-    const mechanicId = review.mechanic;
+    const mechanicId = review.mechanicId;
 
     // Delete review
     await Review.findByIdAndDelete(reviewId);
@@ -691,7 +691,7 @@ const deleteReview = async (req, res) => {
     await updateMechanicRating(mechanicId);
 
     // Update service request to remove review reference
-    await ServiceRequest.findByIdAndUpdate(review.serviceRequest, {
+    await ServiceRequest.findByIdAndUpdate(review.requestId, {
       $unset: { reviewId: 1, reviewedAt: 1 }
     });
 
@@ -874,7 +874,7 @@ const getMechanicReviewStats = async (req, res) => {
 const updateMechanicRating = async (mechanicId) => {
   try {
     const stats = await Review.aggregate([
-      { $match: { mechanic: new mongoose.Types.ObjectId(mechanicId) } },
+      { $match: { mechanicId: new mongoose.Types.ObjectId(mechanicId) } },
       {
         $group: {
           _id: null,

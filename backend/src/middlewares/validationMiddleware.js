@@ -196,14 +196,16 @@ const schemas = {
   // Review schema
   review: Joi.object({
     serviceRequestId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
+    mechanicId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required(),
     rating: Joi.number().integer().min(1).max(5).required(),
-    comment: Joi.string().trim().max(500),
-    categories: Joi.object({
-      timeliness: Joi.number().integer().min(1).max(5),
-      professionalism: Joi.number().integer().min(1).max(5),
-      quality: Joi.number().integer().min(1).max(5),
-      communication: Joi.number().integer().min(1).max(5)
-    })
+    comment: Joi.string().trim().max(1000).optional(),
+    tags: Joi.array().items(
+      Joi.string().valid(
+        'excellent_service', 'quick_response', 'professional', 'fair_pricing',
+        'courteous', 'skilled', 'helpful', 'reliable', 'needs_improvement',
+        'expensive', 'delayed', 'unprofessional'
+      )
+    ).optional()
   }),
 
   // Mechanic verification schemas
@@ -330,6 +332,11 @@ const schemas = {
     currency: Joi.string().length(3).uppercase().default('USD'),
     paymentMethod: Joi.string().valid('card', 'wallet', 'upi').required(),
     tip: Joi.number().min(0).default(0)
+  }),
+
+  // Post-completion payment schema
+  postCompletionPayment: Joi.object({
+    serviceRequestId: Joi.string().pattern(/^[0-9a-fA-F]{24}$/).required()
   }),
 
   // Update request status schema

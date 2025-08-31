@@ -6,12 +6,18 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   MapPinIcon,
-  WrenchScrewdriverIcon
+  WrenchScrewdriverIcon,
+  CreditCardIcon,
+  CurrencyDollarIcon,
+  ReceiptIcon
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import requestService from '../../services/requestService';
+import paymentApi from '../../api/paymentApi';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import { REQUEST_STATUS_LABELS, REQUEST_STATUS_COLORS } from '../../utils/constants';
+import UnifiedPaymentModal from '../../components/payment/UnifiedPaymentModal';
+import toast from 'react-hot-toast';
 
 const CustomerDashboard = () => {
   const [requests, setRequests] = useState([]);
@@ -22,9 +28,13 @@ const CustomerDashboard = () => {
     totalSpent: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [pendingPayments, setPendingPayments] = useState([]);
 
   useEffect(() => {
     fetchDashboardData();
+    fetchPendingPayments();
   }, []);
 
   const fetchDashboardData = async () => {
@@ -65,6 +75,41 @@ const CustomerDashboard = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const fetchPendingPayments = async () => {
+    try {
+      const response = await paymentApi.getPaymentHistory({
+        status: 'pending',
+        limit: 5
+      });
+      
+      if (response.success) {
+        setPendingPayments(response.data.items || []);
+      }
+    } catch (error) {
+      console.error('Error fetching pending payments:', error);
+    }
+  };
+
+  const handlePaymentClick = (request) => {
+    setSelectedRequest(request);
+    setShowPaymentModal(true);
+  };
+
+  const handlePaymentSuccess = (paymentData) => {
+    toast.success('Payment completed successfully!');
+    setShowPaymentModal(false);
+    setSelectedRequest(null);
+    // Refresh dashboard data
+    fetchDashboardData();
+    fetchPendingPayments();
+  };
+
+  const handlePaymentFailure = (error) => {
+    toast.error('Payment failed. Please try again.');
+    setShowPaymentModal(false);
+    setSelectedRequest(null);
   };
 
   const getStatusIcon = (status) => {
@@ -223,6 +268,54 @@ const CustomerDashboard = () => {
         </div>
       </div>
 
+      {/* Pending Payments Section */}
+      {pendingPayments.length > 0 && (
+        <div className="bg-white rounded-lg shadow-card">
+          <div className="px-6 py-4 border-b border-secondary-200">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-semibold text-secondary-900">Pending Payments</h2>
+              <Link to="/customer/payments">
+                <Button variant="ghost" size="sm">View All Payments</Button>
+              </Link>
+            </div>
+          </div>
+          
+          <div className="p-6">
+            <div className="space-y-4">
+              {pendingPayments.map((payment) => (
+                <div key={payment._id} className="flex items-center justify-between p-4 border border-secondary-200 rounded-lg hover:bg-secondary-50 transition-colors">
+                  <div className="flex items-center space-x-4">
+                    <div className="p-2 bg-yellow-100 rounded-lg">
+                      <CreditCardIcon className="h-5 w-5 text-yellow-600" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium text-secondary-900">
+                        {payment.serviceRequest?.issueType?.replace('_', ' ') || 'Service Payment'}
+                      </h3>
+                      <div className="flex items-center text-sm text-secondary-500">
+                        <span className="font-medium text-secondary-900">
+                          {formatCurrency(payment.amount)}
+                        </span>
+                        <span className="mx-2">•</span>
+                        <span>Due: {formatDate(payment.createdAt)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    onClick={() => handlePaymentClick(payment.serviceRequest)}
+                  >
+                    Pay Now
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick Actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         <div className="bg-white rounded-lg p-6 shadow-card">
@@ -249,6 +342,18 @@ const CustomerDashboard = () => {
           </Link>
         </div>
       </div>
+
+      {/* Payment Modal */}
+      {showPaymentModal && selectedRequest && (
+        <UnifiedPaymentModal
+          isOpen={showPaymentModal}
+          onClose={() => setShowPaymentModal(false)}
+          serviceRequest={selectedRequest}
+          paymentType="post-completion"
+          onPaymentSuccess={handlePaymentSuccess}
+          onPaymentFailure={handlePaymentFailure}
+        />
+      )}
     </div>
   );
 };

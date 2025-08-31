@@ -141,6 +141,25 @@ const serviceRequestSchema = new mongoose.Schema({
     type: String,
     maxlength: [500, 'Cancellation reason cannot exceed 500 characters']
   },
+  paymentStatus: {
+    type: String,
+    enum: ['pending', 'paid', 'failed', 'refunded'],
+    default: 'pending'
+  },
+  paidAt: Date,
+  finalAmount: {
+    type: Number,
+    min: [0, 'Final amount cannot be negative']
+  },
+  reviewId: {
+    type: mongoose.Schema.ObjectId,
+    ref: 'Review',
+    default: null
+  },
+  reviewedAt: {
+    type: Date,
+    default: null
+  },
   history: [historySchema],
   notes: [{
     text: {
@@ -168,6 +187,7 @@ const serviceRequestSchema = new mongoose.Schema({
 serviceRequestSchema.index({ customerId: 1, status: 1 });
 serviceRequestSchema.index({ mechanicId: 1, status: 1 });
 serviceRequestSchema.index({ status: 1, createdAt: -1 });
+serviceRequestSchema.index({ reviewId: 1 });
 serviceRequestSchema.index({ location: '2dsphere' });
 serviceRequestSchema.index({ issueType: 1 });
 serviceRequestSchema.index({ priority: 1, status: 1 });

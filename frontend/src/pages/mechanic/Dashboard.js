@@ -11,10 +11,12 @@ import {
   ExclamationTriangleIcon,
   DocumentTextIcon,
   CalendarIcon,
-  ChatBubbleLeftIcon
+  ChatBubbleLeftIcon,
+  ArrowTopRightOnSquareIcon
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import VerificationForm from '../../components/mechanic/VerificationForm';
+import NavigationModal from '../../components/mechanic/NavigationModal';
 import mechanicApi from '../../api/mechanicApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate, formatCurrency } from '../../utils/helpers';
@@ -34,6 +36,8 @@ const MechanicDashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const [showVerificationForm, setShowVerificationForm] = useState(false);
+  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [showNavigationModal, setShowNavigationModal] = useState(false);
 
   useEffect(() => {
     fetchDashboardData();
@@ -392,6 +396,18 @@ const MechanicDashboard = () => {
                     >
                       View Details
                     </Link>
+                    {(request.status === 'assigned' || request.status === 'enroute') && (
+                      <button
+                        onClick={() => {
+                          setSelectedRequest(request);
+                          setShowNavigationModal(true);
+                        }}
+                        className="inline-flex items-center px-3 py-2 border border-gray-300 text-sm leading-4 font-medium rounded-md text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
+                      >
+                        <ArrowTopRightOnSquareIcon className="h-4 w-4 mr-1" />
+                        Navigate
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -485,6 +501,14 @@ const MechanicDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Navigation Modal */}
+      <NavigationModal
+        isOpen={showNavigationModal}
+        onClose={() => setShowNavigationModal(false)}
+        request={selectedRequest}
+        mechanicLocation={user?.location}
+      />
     </div>
   );
 };

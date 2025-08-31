@@ -7,9 +7,10 @@ import {
 } from '@heroicons/react/24/outline';
 import Button from '../common/Button';
 import { useAuth } from '../../contexts/AuthContext';
+import reviewService from '../../services/reviewService';
 import toast from 'react-hot-toast';
 
-const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onReviewSubmitted }) => {
+const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onSuccess }) => {
   const { user } = useAuth();
   const [rating, setRating] = useState(0);
   const [hoveredRating, setHoveredRating] = useState(0);
@@ -63,36 +64,25 @@ const AddReview = ({ requestId, mechanicId, mechanicName, onClose, onReviewSubmi
       setSubmitting(true);
       
       const reviewData = {
-        requestId,
+        serviceRequestId: requestId,
         mechanicId,
-        customerId: user.id,
         rating,
         comment: comment.trim(),
-        categories: selectedCategories,
-        timestamp: new Date().toISOString()
+        tags: selectedCategories
       };
 
-      // This would be replaced with actual API call
-      const response = await fetch('/api/reviews/submit', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(reviewData)
-      });
-
-      const data = await response.json();
+      const response = await reviewService.submitReview(reviewData);
       
-      if (data.success) {
+      if (response.success) {
         toast.success('Review submitted successfully!');
-        onReviewSubmitted && onReviewSubmitted(data.review);
+        onSuccess && onSuccess(response.data);
         onClose();
       } else {
-        toast.error(data.message || 'Failed to submit review');
+        toast.error(response.message || 'Failed to submit review');
       }
     } catch (error) {
       console.error('Error submitting review:', error);
-      toast.error('Failed to submit review');
+      toast.error(error.message || 'Failed to submit review');
     } finally {
       setSubmitting(false);
     }

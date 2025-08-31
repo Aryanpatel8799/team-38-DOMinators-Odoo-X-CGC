@@ -107,7 +107,7 @@ const getDashboardStats = async (req, res) => {
             count: { $sum: 1 }
           }
         }
-      ]),
+      ]).catch(() => []),
       
       // Service request statistics
       ServiceRequest.aggregate([
@@ -117,18 +117,18 @@ const getDashboardStats = async (req, res) => {
             count: { $sum: 1 }
           }
         }
-      ]),
+      ]).catch(() => []),
       
       // Payment statistics
       Payment.aggregate([
         {
           $group: {
             _id: null,
-            totalAmount: { $sum: '$amount' },
+            totalAmount: { $sum: { $ifNull: ['$amount', 0] } },
             totalTransactions: { $sum: 1 }
           }
         }
-      ]),
+      ]).catch(() => [{ _id: null, totalAmount: 0, totalTransactions: 0 }]),
       
       // Review statistics
       Review.aggregate([
@@ -136,10 +136,10 @@ const getDashboardStats = async (req, res) => {
           $group: {
             _id: null,
             totalReviews: { $sum: 1 },
-            averageRating: { $avg: '$rating' }
+            averageRating: { $avg: { $ifNull: ['$rating', 0] } }
           }
         }
-      ]),
+      ]).catch(() => [{ _id: null, totalReviews: 0, averageRating: 0 }]),
       
       // Top mechanics
       User.aggregate([
@@ -161,26 +161,32 @@ const getDashboardStats = async (req, res) => {
                   cond: { $eq: ['$$this.status', 'completed'] }
                 }
               }
-            }
+            },
+            totalJobs: { $size: '$requests' }
           }
         },
         {
-          $sort: { rating: -1, completedJobs: -1 }
+          $sort: { 
+            rating: -1, 
+            completedJobs: -1 
+          }
         },
         {
           $limit: 10
         },
         {
           $project: {
+            _id: 1,
             name: 1,
             email: 1,
-            rating: 1,
+            rating: { $ifNull: ['$rating', 0] },
             completedJobs: 1,
+            totalJobs: 1,
             phone: 1,
             location: 1
           }
         }
-      ])
+      ]).catch(() => [])
     ]);
 
     // Process user statistics
@@ -211,13 +217,14 @@ const getDashboardStats = async (req, res) => {
     };
 
     // Recent transactions
-          const recentTransactions = await Payment.find()
+    const recentTransactions = await Payment.find()
       .populate('customerId', 'name email')
-      .populate('serviceRequest', 'issueType')
+      .populate('requestId', 'issueType')
       .sort({ createdAt: -1 })
       .limit(10)
       .select('amount status razorpayPaymentId createdAt')
-      .lean();
+      .lean()
+      .catch(() => []);
 
     const payments = {
       totalAmount: paymentStats[0]?.totalAmount || 0,
@@ -252,7 +259,11 @@ const getDashboardStats = async (req, res) => {
     });
 
   } catch (error) {
-    logger.error('Error fetching dashboard statistics:', error);
+    logger.error('Error fetching dashboard statistics:', {
+      error: error.message,
+      stack: error.stack,
+      userId: req.user?.id
+    });
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dashboard statistics',
@@ -353,9 +364,13 @@ const getUsers = async (req, res) => {
     sort[sortBy] = sortOrder === 'desc' ? -1 : 1;
     const skip = (parseInt(page) - 1) * parseInt(limit);
     
+    console.log('Admin getUsers - Filter:', filter);
+    console.log('Admin getUsers - Sort:', sort);
+    console.log('Admin getUsers - Skip:', skip, 'Limit:', parseInt(limit));
+    
     const [users, totalUsers] = await Promise.all([
       User.find(filter)
-        .select('-password -refreshTokens')
+        .select('-passwordHash -refreshTokens')
         .sort(sort)
         .skip(skip)
         .limit(parseInt(limit))
@@ -363,12 +378,16 @@ const getUsers = async (req, res) => {
       User.countDocuments(filter)
     ]);
 
+    console.log('Admin getUsers - Found users:', users.length);
+    console.log('Admin getUsers - Total users:', totalUsers);
+
     const totalPages = Math.ceil(totalUsers / parseInt(limit));
 
     logger.info('Users retrieved by admin', {
       adminId: req.user.id,
       filters: filter,
-      pagination: { page, limit, totalUsers, totalPages }
+      pagination: { page, limit, totalUsers, totalPages },
+      usersFound: users.length
     });
 
     res.json({
@@ -379,7 +398,7 @@ const getUsers = async (req, res) => {
         pagination: {
           currentPage: parseInt(page),
           totalPages,
-          totalUsers,
+          totalItems: totalUsers,
           hasNext: parseInt(page) < totalPages,
           hasPrev: parseInt(page) > 1
         }
@@ -388,6 +407,7 @@ const getUsers = async (req, res) => {
 
   } catch (error) {
     logger.error('Error fetching users:', error);
+    console.error('Error in getUsers:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to fetch users',
