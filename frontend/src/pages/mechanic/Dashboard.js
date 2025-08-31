@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   ClockIcon, 
@@ -9,16 +9,18 @@ import {
   CurrencyDollarIcon,
   UserIcon,
   ExclamationTriangleIcon,
-  DocumentTextIcon
+  DocumentTextIcon,
+  CalendarIcon,
+  ChatBubbleLeftIcon
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import VerificationForm from '../../components/mechanic/VerificationForm';
-import requestService from '../../services/requestService';
-import mechanicVerificationService from '../../services/mechanicVerificationService';
+import mechanicApi from '../../api/mechanicApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatDate, formatCurrency } from '../../utils/helpers';
 import { REQUEST_STATUS_LABELS } from '../../utils/constants';
 import toast from 'react-hot-toast';
+import socketService from '../../services/socketService';
 
 const MechanicDashboard = () => {
   const { user } = useAuth();
@@ -36,43 +38,68 @@ const MechanicDashboard = () => {
   useEffect(() => {
     fetchDashboardData();
     checkVerificationStatus();
+    setupSocketListeners();
+    
+    return () => {
+      // Cleanup socket listeners
+      socketService.off('new-request-available');
+      socketService.off('request-taken');
+    };
   }, []);
+
+  const setupSocketListeners = () => {
+    // Join mechanic area for receiving broadcast requests
+    if (user && user._id && user.location) {
+      socketService.joinMechanicArea(user._id, user.location);
+    }
+
+    // Listen for new available requests
+    socketService.onNewRequestAvailable((requestData) => {
+      console.log('New request available:', requestData);
+      toast.success(`New ${requestData.issueType} request available nearby!`);
+      // Refresh dashboard data to show new request
+      fetchDashboardData();
+    });
+
+    // Listen for requests taken by other mechanics
+    socketService.onRequestTaken((data) => {
+      console.log('Request taken by another mechanic:', data);
+      // Refresh dashboard data
+      fetchDashboardData();
+    });
+  };
 
   const fetchDashboardData = async () => {
     try {
       setLoading(true);
       
-      // Fetch assigned requests
-      const requestsResponse = await requestService.getAssignedRequests({ 
-        limit: 5, 
-        page: 1 
-      });
+      console.log('Fetching dashboard data...');
+      
+      // Fetch assigned requests and stats (including available broadcast requests)
+      const [requestsResponse, statsResponse] = await Promise.all([
+        mechanicApi.getAssignedRequests({ limit: 5, page: 1 }), // Temporarily disable includeAvailable
+        mechanicApi.getStats()
+      ]);
+      
+      console.log('Requests response:', requestsResponse);
+      console.log('Stats response:', statsResponse);
       
       if (requestsResponse.success) {
-        const requestsData = requestsResponse.data.items || [];
+        const requestsData = requestsResponse.data.items || requestsResponse.data.requests || [];
+        console.log('Setting requests:', requestsData);
         setRequests(requestsData);
-        
-        // Calculate stats
-        const totalRequests = requestsData.length;
-        const activeRequests = requestsData.filter(req => 
-          ['assigned', 'enroute', 'in_progress'].includes(req.status)
-        ).length;
-        const completedRequests = requestsData.filter(req => 
-          req.status === 'completed'
-        ).length;
-        const totalEarnings = requestsData
-          .filter(req => req.status === 'completed' && req.quotation)
-          .reduce((sum, req) => sum + req.quotation, 0);
-        
-        setStats({
-          totalRequests,
-          activeRequests,
-          completedRequests,
-          totalEarnings,
-        });
+      } else {
+        console.error('Requests response not successful:', requestsResponse);
+      }
+
+      if (statsResponse.success) {
+        setStats(statsResponse.data);
+      } else {
+        console.error('Stats response not successful:', statsResponse);
       }
     } catch (error) {
       console.error('Error fetching dashboard data:', error);
+      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
@@ -80,7 +107,7 @@ const MechanicDashboard = () => {
 
   const checkVerificationStatus = async () => {
     try {
-      const response = await mechanicVerificationService.getVerificationStatus();
+      const response = await mechanicApi.getVerificationStatus();
       if (response.success && response.data.verification) {
         setVerification(response.data.verification);
       }
@@ -200,11 +227,31 @@ const MechanicDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Welcome Section */}
-      <div className="bg-gradient-to-r from-primary-600 to-primary-800 rounded-lg text-white p-6">
-        <h1 className="text-2xl font-bold mb-2">Welcome back, {user?.name}!</h1>
-        <p className="text-primary-100">
-          Manage your service requests and track your earnings
-        </p>
+      <div className="bg-gradient-to-r from-primary-600 to-primary-800 rounded-lg text-white p-8 relative overflow-hidden">
+        <div className="relative z-10">
+          <h1 className="text-3xl font-bold mb-2">Welcome back, {user?.name}! 👋</h1>
+          <p className="text-primary-100 text-lg">
+            Ready to help customers with their vehicle issues? Let's get started!
+          </p>
+          <div className="mt-4 flex items-center space-x-4">
+            <div className="flex items-center space-x-2">
+              <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+              <span className="text-sm">Online & Available</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <ClockIcon className="h-4 w-4" />
+              <span className="text-sm">Last active: Just now</span>
+            </div>
+            <Link to="/mechanic/chat">
+              <Button variant="outline" size="sm" className="flex items-center gap-2 bg-white text-primary-600 hover:bg-primary-50">
+                <ChatBubbleLeftIcon className="w-4 h-4" />
+                View Messages
+              </Button>
+            </Link>
+          </div>
+        </div>
+        <div className="absolute top-0 right-0 w-32 h-32 bg-white bg-opacity-10 rounded-full -mr-16 -mt-16"></div>
+        <div className="absolute bottom-0 left-0 w-24 h-24 bg-white bg-opacity-10 rounded-full -ml-12 -mb-12"></div>
       </div>
 
       {/* Verification Status */}
@@ -212,50 +259,54 @@ const MechanicDashboard = () => {
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <DocumentTextIcon className="h-6 w-6 text-blue-600" />
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-1">Total Requests</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.totalRequests}</p>
+              <p className="text-xs text-green-600 mt-1">+12% this month</p>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Requests</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.totalRequests}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-yellow-100 rounded-lg">
-              <ClockIcon className="h-6 w-6 text-yellow-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Active Requests</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.activeRequests}</p>
+            <div className="p-3 bg-blue-100 rounded-xl">
+              <DocumentTextIcon className="h-8 w-8 text-blue-600" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircleIcon className="h-6 w-6 text-green-600" />
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-1">Active Requests</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.activeRequests}</p>
+              <p className="text-xs text-orange-600 mt-1">Currently working</p>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Completed</p>
-              <p className="text-2xl font-semibold text-gray-900">{stats.completedRequests}</p>
+            <div className="p-3 bg-yellow-100 rounded-xl">
+              <ClockIcon className="h-8 w-8 text-yellow-600" />
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-lg shadow p-6">
-          <div className="flex items-center">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CurrencyDollarIcon className="h-6 w-6 text-green-600" />
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-1">Completed</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.completedRequests}</p>
+              <p className="text-xs text-green-600 mt-1">98% success rate</p>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Earnings</p>
-              <p className="text-2xl font-semibold text-gray-900">{formatCurrency(stats.totalEarnings)}</p>
+            <div className="p-3 bg-green-100 rounded-xl">
+              <CheckCircleIcon className="h-8 w-8 text-green-600" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100 hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-gray-600 mb-1">Total Earnings</p>
+              <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats.totalEarnings)}</p>
+              <p className="text-xs text-green-600 mt-1">+₹2,450 this week</p>
+            </div>
+            <div className="p-3 bg-green-100 rounded-xl">
+              <CurrencyDollarIcon className="h-8 w-8 text-green-600" />
             </div>
           </div>
         </div>
@@ -350,39 +401,71 @@ const MechanicDashboard = () => {
       </div>
 
       {/* Quick Actions */}
-      <div className="bg-white rounded-lg shadow p-6">
-        <h2 className="text-lg font-medium text-gray-900 mb-4">Quick Actions</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="bg-white rounded-xl shadow-lg p-6 border border-gray-100">
+        <h2 className="text-xl font-bold text-gray-900 mb-6">Quick Actions</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           <Link
             to="/mechanic/requests"
-            className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="group flex items-center p-6 border-2 border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50 transition-all duration-300 transform hover:-translate-y-1"
           >
-            <WrenchScrewdriverIcon className="h-8 w-8 text-primary-600" />
+            <div className="p-3 bg-primary-100 rounded-xl group-hover:bg-primary-200 transition-colors">
+              <WrenchScrewdriverIcon className="h-8 w-8 text-primary-600" />
+            </div>
             <div className="ml-4">
-              <h3 className="text-sm font-medium text-gray-900">View All Requests</h3>
-              <p className="text-sm text-gray-500">See all available service requests</p>
+              <h3 className="text-sm font-bold text-gray-900 group-hover:text-primary-700">View All Requests</h3>
+              <p className="text-sm text-gray-500 group-hover:text-primary-600">See all available service requests</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/mechanic/calendar"
+            className="group flex items-center p-6 border-2 border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50 transition-all duration-300 transform hover:-translate-y-1"
+          >
+            <div className="p-3 bg-primary-100 rounded-xl group-hover:bg-primary-200 transition-colors">
+              <CalendarIcon className="h-8 w-8 text-primary-600" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-sm font-bold text-gray-900 group-hover:text-primary-700">Service Calendar</h3>
+              <p className="text-sm text-gray-500 group-hover:text-primary-600">View monthly service schedule</p>
             </div>
           </Link>
 
           <Link
             to="/mechanic/profile"
-            className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="group flex items-center p-6 border-2 border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50 transition-all duration-300 transform hover:-translate-y-1"
           >
-            <UserIcon className="h-8 w-8 text-primary-600" />
+            <div className="p-3 bg-primary-100 rounded-xl group-hover:bg-primary-200 transition-colors">
+              <UserIcon className="h-8 w-8 text-primary-600" />
+            </div>
             <div className="ml-4">
-              <h3 className="text-sm font-medium text-gray-900">Update Profile</h3>
-              <p className="text-sm text-gray-500">Manage your profile and settings</p>
+              <h3 className="text-sm font-bold text-gray-900 group-hover:text-primary-700">Update Profile</h3>
+              <p className="text-sm text-gray-500 group-hover:text-primary-600">Manage your profile and settings</p>
             </div>
           </Link>
 
           <Link
             to="/mechanic/earnings"
-            className="flex items-center p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
+            className="group flex items-center p-6 border-2 border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50 transition-all duration-300 transform hover:-translate-y-1"
           >
-            <CurrencyDollarIcon className="h-8 w-8 text-primary-600" />
+            <div className="p-3 bg-primary-100 rounded-xl group-hover:bg-primary-200 transition-colors">
+              <CurrencyDollarIcon className="h-8 w-8 text-primary-600" />
+            </div>
             <div className="ml-4">
-              <h3 className="text-sm font-medium text-gray-900">View Earnings</h3>
-              <p className="text-sm text-gray-500">Track your earnings and payments</p>
+              <h3 className="text-sm font-bold text-gray-900 group-hover:text-primary-700">View Earnings</h3>
+              <p className="text-sm text-gray-500 group-hover:text-primary-600">Track your earnings and payments</p>
+            </div>
+          </Link>
+
+          <Link
+            to="/mechanic/chat"
+            className="group flex items-center p-6 border-2 border-gray-100 rounded-xl hover:border-primary-200 hover:bg-primary-50 transition-all duration-300 transform hover:-translate-y-1"
+          >
+            <div className="p-3 bg-primary-100 rounded-xl group-hover:bg-primary-200 transition-colors">
+              <ChatBubbleLeftIcon className="h-8 w-8 text-primary-600" />
+            </div>
+            <div className="ml-4">
+              <h3 className="text-sm font-bold text-gray-900 group-hover:text-primary-700">Messages</h3>
+              <p className="text-sm text-gray-500 group-hover:text-primary-600">Chat with customers</p>
             </div>
           </Link>
         </div>

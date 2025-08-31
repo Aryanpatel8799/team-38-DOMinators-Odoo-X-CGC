@@ -170,7 +170,9 @@ const CreateRequest = () => {
       const requestData = {
         ...formData,
         images: imageUrls,
-        customerId: user._id
+        customerId: user._id,
+        broadcastRadius: 25, // 25km radius for broadcasting to mechanics
+        isDirectBooking: false // This is a broadcast request
       };
 
       const response = await requestService.createRequest(requestData);

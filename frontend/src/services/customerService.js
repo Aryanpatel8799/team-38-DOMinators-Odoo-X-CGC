@@ -137,40 +137,40 @@ class CustomerService {
     }
   }
 
-  // Payments
+  // Payment methods
   async createPaymentOrder(paymentData) {
     try {
-      const response = await api.post('/customer/payments/create-order', paymentData);
+      const response = await api.post('/payments/create-order', paymentData);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to create payment order' };
+      throw error;
     }
   }
 
   async verifyPayment(verificationData) {
     try {
-      const response = await api.post('/customer/payments/verify', verificationData);
+      const response = await api.post('/payments/verify', verificationData);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to verify payment' };
+      throw error;
     }
   }
 
-  async getPaymentHistory(params = {}) {
+  async getPaymentHistory(filters = {}) {
     try {
       const queryParams = new URLSearchParams();
-      Object.keys(params).forEach(key => {
-        if (params[key] !== undefined && params[key] !== null) {
-          queryParams.append(key, params[key]);
+      Object.keys(filters).forEach(key => {
+        if (filters[key] !== undefined && filters[key] !== null) {
+          queryParams.append(key, filters[key]);
         }
       });
-      
-      const response = await api.get(`/customer/payments/history?${queryParams.toString()}`);
+      const response = await api.get(`/payments/history?${queryParams.toString()}`);
       return response.data;
     } catch (error) {
-      throw error.response?.data || { message: 'Failed to fetch payment history' };
+      throw error;
     }
   }
 }
 
-export default new CustomerService();
+const customerService = new CustomerService();
+export default customerService;

@@ -45,10 +45,11 @@ const io = socketIo(server, {
 });
 
 // Initialize Socket handlers
-requestSocket(io);
+const socketHandlers = requestSocket(io);
 
-// Make io available to other modules
+// Make io and socket handlers available to other modules
 app.set('io', io);
+app.set('socketHandlers', socketHandlers);
 
 // Connect to Database
 connectDB().then(() => {

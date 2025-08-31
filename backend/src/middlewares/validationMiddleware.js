@@ -154,7 +154,7 @@ const schemas = {
       }, 'parse location json')
     ).required(),
     priority: Joi.string().valid('low', 'medium', 'high', 'emergency').default('medium'),
-    broadcastRadius: Joi.number().min(1).max(50).default(10)
+    broadcastRadius: Joi.number().min(1).max(50).default(25)
   }),
 
   // Profile schemas
@@ -345,12 +345,30 @@ const schemas = {
       'transmission_issue', 'other'
     ).required(),
     description: Joi.string().trim().min(10).max(1000).required(),
-    vehicleInfo: Joi.object({
-      type: Joi.string().valid('car', 'motorcycle', 'truck', 'bus', 'other').required(),
-      model: Joi.string().trim().min(2).max(50).required(),
-      plate: Joi.string().trim().min(3).max(20).required(),
-      year: Joi.number().min(1900).max(new Date().getFullYear() + 1).optional()
-    }).required(),
+    vehicleInfo: Joi.alternatives().try(
+      Joi.object({
+        type: Joi.string().valid('car', 'motorcycle', 'truck', 'bus', 'other').required(),
+        model: Joi.string().trim().min(2).max(50).required(),
+        plate: Joi.string().trim().min(3).max(20).required(),
+        year: Joi.number().min(1900).max(new Date().getFullYear() + 1).optional()
+      }),
+      Joi.string().custom((value, helpers) => {
+        if (typeof value === 'object' && value !== null) {
+          return value;
+        }
+        if (typeof value === 'string') {
+          try {
+            const parsed = JSON.parse(value);
+            if (typeof parsed === 'object' && parsed !== null) {
+              return parsed;
+            }
+          } catch (error) {
+            return helpers.error('any.invalid');
+          }
+        }
+        return helpers.error('any.invalid');
+      }, 'parse vehicleInfo json')
+    ).required(),
     location: Joi.alternatives().try(
       Joi.object({
         lat: Joi.number().min(-90).max(90).required(),
@@ -375,9 +393,39 @@ const schemas = {
       }, 'parse location json')
     ).required(),
     priority: Joi.string().valid('low', 'medium', 'high', 'emergency').default('medium'),
-    broadcastRadius: Joi.number().min(1).max(50).default(10),
+    broadcastRadius: Joi.number().min(1).max(50).default(25),
     isDirectBooking: Joi.boolean().default(false),
     images: Joi.array().items(Joi.string()).max(5).optional()
+  }),
+
+  // Vehicle management schemas
+  addVehicle: Joi.object({
+    name: Joi.string().trim().min(1).max(50).required(),
+    type: Joi.string().valid('car', 'motorcycle', 'truck', 'bus', 'other').required(),
+    make: Joi.string().trim().min(1).max(50).required(),
+    model: Joi.string().trim().min(1).max(50).required(),
+    year: Joi.number().integer().min(1900).max(new Date().getFullYear() + 1).required(),
+    plate: Joi.string().trim().min(3).max(20).required(),
+    color: Joi.string().trim().max(30).optional(),
+    isDefault: Joi.boolean().default(false)
+  }),
+
+  updateVehicle: Joi.object({
+    name: Joi.string().trim().min(1).max(50).required(),
+    type: Joi.string().valid('car', 'motorcycle', 'truck', 'bus', 'other').required(),
+    make: Joi.string().trim().min(1).max(50).required(),
+    model: Joi.string().trim().min(1).max(50).required(),
+    year: Joi.number().integer().min(1900).max(new Date().getFullYear() + 1).required(),
+    plate: Joi.string().trim().min(3).max(20).required(),
+    color: Joi.string().trim().max(30).optional(),
+    isDefault: Joi.boolean().default(false)
+  }),
+
+  // Chat schemas
+  sendMessage: Joi.object({
+    content: Joi.string().trim().min(1).max(1000).required(),
+    messageType: Joi.string().valid('text', 'image', 'file').default('text'),
+    fileUrl: Joi.string().uri().optional()
   })
 };
 

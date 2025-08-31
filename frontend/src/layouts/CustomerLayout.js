@@ -1,13 +1,15 @@
 import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import CustomerDashboard from '../pages/customer/Dashboard';
-import CreateRequest from '../pages/customer/CreateRequest';
+import NewRequest from '../pages/customer/NewRequest';
 import BookService from '../pages/customer/BookService';
 import RequestHistory from '../pages/customer/RequestHistory';
 import PaymentHistory from '../pages/customer/PaymentHistory';
 import Notifications from '../pages/customer/Notifications';
 import Profile from '../pages/customer/Profile';
 import MechanicDiscovery from '../pages/customer/MechanicDiscovery';
+import VehicleManagement from '../pages/customer/VehicleManagement';
+import Chat from '../pages/customer/Chat';
 import Sidebar from '../components/common/Sidebar';
 import Header from '../components/common/Header';
 
@@ -34,9 +36,19 @@ const CustomerLayout = () => {
       icon: 'ClockIcon',
     },
     {
+      name: 'My Vehicles',
+      href: '/customer/vehicles',
+      icon: 'TruckIcon',
+    },
+    {
       name: 'Payments',
       href: '/customer/payments',
       icon: 'CreditCardIcon',
+    },
+    {
+      name: 'Messages',
+      href: '/customer/chat',
+      icon: 'ChatBubbleLeftIcon',
     },
     {
       name: 'Notifications',
@@ -63,10 +75,12 @@ const CustomerLayout = () => {
               <Routes>
                 <Route path="dashboard" element={<CustomerDashboard />} />
                 <Route path="mechanics" element={<MechanicDiscovery />} />
-                <Route path="new-request" element={<CreateRequest />} />
+                <Route path="new-request" element={<NewRequest />} />
                 <Route path="book-service" element={<BookService />} />
                 <Route path="requests" element={<RequestHistory />} />
+                <Route path="vehicles" element={<VehicleManagement />} />
                 <Route path="payments" element={<PaymentHistory />} />
+                <Route path="chat" element={<Chat />} />
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="" element={<Navigate to="dashboard" replace />} />

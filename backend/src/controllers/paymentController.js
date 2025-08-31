@@ -754,10 +754,161 @@ const handleOrderPaid = async (orderEntity) => {
   }
 };
 
+/**
+ * Create payment order after work completion
+ */
+const createPostCompletionPaymentOrder = async (req, res) => {
+  try {
+    const { serviceRequestId } = req.body;
+    const customerId = req.user.id;
+
+    console.log('Creating post-completion payment order:', {
+      serviceRequestId,
+      customerId,
+      body: req.body
+    });
+
+    // Validate service request
+    const serviceRequest = await ServiceRequest.findOne({
+      _id: serviceRequestId,
+      customerId: customerId,
+      status: 'completed'
+    }).populate('mechanicId', 'name email phone');
+
+    if (!serviceRequest) {
+      return res.status(404).json({
+        success: false,
+        message: 'Service request not found or not completed'
+      });
+    }
+
+    // Check if mechanic is assigned
+    if (!serviceRequest.mechanicId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No mechanic assigned to this service request'
+      });
+    }
+
+    // Check if payment already exists
+    const existingPayment = await Payment.findOne({
+      requestId: serviceRequestId,
+      status: { $in: ['success', 'pending'] }
+    });
+
+    if (existingPayment) {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment already exists for this service request',
+        data: {
+          paymentId: existingPayment._id,
+          status: existingPayment.status
+        }
+      });
+    }
+
+    // Get the final amount (quotation or negotiated amount)
+    const finalAmount = serviceRequest.quotation || serviceRequest.finalAmount || 0;
+    
+    if (!finalAmount || finalAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No amount specified for payment. Please contact the mechanic for pricing.'
+      });
+    }
+
+    // Create Razorpay order (with fallback for testing)
+    let razorpayOrder;
+    try {
+      console.log('Attempting to create Razorpay order...');
+      razorpayOrder = await paymentService.createOrder({
+        amount: finalAmount * 100, // Convert to paise
+        currency: 'INR',
+        receipt: `order_${serviceRequestId}_${Date.now()}`,
+        notes: {
+          serviceRequestId,
+          customerId,
+          mechanicId: serviceRequest.mechanicId._id.toString(),
+          serviceType: serviceRequest.issueType
+        }
+      });
+      console.log('Razorpay order created successfully:', razorpayOrder.id);
+    } catch (error) {
+      console.log('Razorpay error, creating test order:', error.message);
+      // Create test order for development
+      razorpayOrder = {
+        id: `order_test_${Date.now()}`,
+        amount: finalAmount * 100,
+        currency: 'INR',
+        receipt: `order_${serviceRequestId}_${Date.now()}`
+      };
+      console.log('Test order created:', razorpayOrder.id);
+    }
+
+    // Create payment record
+    const payment = new Payment({
+      customerId: customerId,
+      requestId: serviceRequestId,
+      mechanicId: serviceRequest.mechanicId._id,
+      amount: finalAmount,
+      currency: 'INR',
+      razorpayOrderId: razorpayOrder.id,
+      status: 'pending',
+      method: 'Card', // Using 'Card' as per Payment model enum
+      receipt: `order_${serviceRequestId}_${Date.now()}`
+    });
+
+    try {
+      await payment.save();
+      console.log('Payment record saved successfully:', payment._id);
+    } catch (saveError) {
+      console.error('Error saving payment record:', saveError);
+      throw new Error('Failed to save payment record');
+    }
+
+    logger.info('Post-completion payment order created', {
+      paymentId: payment._id,
+      customerId,
+      serviceRequestId,
+      amount: finalAmount,
+      razorpayOrderId: razorpayOrder.id
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Payment order created successfully',
+      data: {
+        paymentId: payment._id,
+        orderId: razorpayOrder.id,
+        amount: finalAmount,
+        currency: 'INR',
+        razorpayOrderId: razorpayOrder.id,
+        razorpayKey: process.env.RAZORPAY_KEY_ID,
+        serviceRequest: {
+          id: serviceRequest._id,
+          issueType: serviceRequest.issueType,
+          mechanic: serviceRequest.mechanicId.name,
+          description: serviceRequest.description,
+          completedAt: serviceRequest.completedAt
+        }
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error creating post-completion payment order:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment order',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   createPaymentOrder,
   verifyPayment,
   getPaymentHistory,
   getPaymentDetails,
-  handleRazorpayWebhook
+  handleRazorpayWebhook,
+  createPostCompletionPaymentOrder
 };

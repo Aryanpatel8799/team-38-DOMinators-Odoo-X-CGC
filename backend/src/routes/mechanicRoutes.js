@@ -95,6 +95,105 @@ router.get('/profile', mechanicController.getProfile);
 
 /**
  * @swagger
+ * /api/mechanic/stats:
+ *   get:
+ *     summary: Get mechanic statistics and earnings summary
+ *     tags: [Mechanic - Statistics]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/stats', mechanicController.getMechanicStats);
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/summary:
+ *   get:
+ *     summary: Get mechanic earnings summary for a specific period
+ *     tags: [Mechanic - Earnings]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/earnings/summary', mechanicController.getEarningsSummary);
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/detailed:
+ *   get:
+ *     summary: Get detailed mechanic earnings for a specific period
+ *     tags: [Mechanic - Earnings]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/earnings/detailed', mechanicController.getDetailedEarnings);
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/chart:
+ *   get:
+ *     summary: Get chart data for mechanic earnings
+ *     tags: [Mechanic - Earnings]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/earnings/chart', mechanicController.getEarningsChart);
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/export:
+ *   get:
+ *     summary: Export mechanic earnings data
+ *     tags: [Mechanic - Earnings]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/earnings/export', mechanicController.exportEarnings);
+
+/**
+ * @swagger
+ * /api/mechanic/service-areas:
+ *   get:
+ *     summary: Get mechanic service areas
+ *     tags: [Mechanic - Service Areas]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get('/service-areas', mechanicController.getServiceAreas);
+
+/**
+ * @swagger
+ * /api/mechanic/service-areas:
+ *   post:
+ *     summary: Add new service area for mechanic
+ *     tags: [Mechanic - Service Areas]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post('/service-areas', mechanicController.addServiceArea);
+
+/**
+ * @swagger
+ * /api/mechanic/service-areas/{areaId}:
+ *   delete:
+ *     summary: Remove service area for mechanic
+ *     tags: [Mechanic - Service Areas]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.delete('/service-areas/:areaId', mechanicController.removeServiceArea);
+
+/**
+ * @swagger
+ * /api/mechanic/availability:
+ *   patch:
+ *     summary: Update mechanic availability
+ *     tags: [Mechanic - Profile]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch('/availability', mechanicController.updateAvailability);
+
+/**
+ * @swagger
  * /api/mechanic/profile:
  *   patch:
  *     summary: Update mechanic profile

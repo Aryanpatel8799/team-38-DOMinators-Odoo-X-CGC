@@ -89,7 +89,7 @@ const uploadImages = asyncHandler(async (req, res) => {
  *                   format: binary
  */
 const createServiceRequest = asyncHandler(async (req, res) => {
-  const { issueType, description, vehicleInfo, location, priority = 'medium', broadcastRadius = 10, mechanicId, isDirectBooking } = req.body;
+  const { issueType, description, vehicleInfo, location, priority = 'medium', broadcastRadius = 25, mechanicId, isDirectBooking } = req.body;
 
   // Debug logging
   logger.info('Creating service request:', {
@@ -187,6 +187,9 @@ const createServiceRequest = asyncHandler(async (req, res) => {
   // Populate customer info for notifications
   await serviceRequest.populate('customerId', 'name email phone');
 
+  // Initialize nearbyMechanics variable
+  let nearbyMechanics = [];
+
   // Handle notifications based on booking type
   try {
     // Notify customer
@@ -203,8 +206,8 @@ const createServiceRequest = asyncHandler(async (req, res) => {
         });
       }
     } else {
-      // Broadcast booking - find and notify nearby mechanics
-      const nearbyMechanics = await User.find({
+      // Broadcast booking - find and notify nearby mechanics within 25km
+      nearbyMechanics = await User.find({
         role: 'mechanic',
         isActive: true,
         location: {
@@ -216,10 +219,52 @@ const createServiceRequest = asyncHandler(async (req, res) => {
             $maxDistance: broadcastRadius * 1000 // Convert km to meters
           }
         }
-      }).limit(20);
+      }).limit(50); // Increased limit to accommodate more mechanics in 25km radius
 
       if (nearbyMechanics.length > 0) {
         await notificationService.broadcastToMechanics(serviceRequest, nearbyMechanics);
+        
+        // Real-time socket broadcast to available mechanics
+        const io = req.app.get('io');
+        const socketHandlers = req.app.get('socketHandlers');
+        
+        if (io && socketHandlers) {
+          try {
+            // Use the socket helper function to broadcast
+            socketHandlers.broadcastServiceRequest(serviceRequest, nearbyMechanics);
+            
+            logger.info('Real-time broadcast sent to mechanics:', {
+              requestId: serviceRequest._id,
+              mechanicCount: nearbyMechanics.length,
+              broadcastRadius: broadcastRadius
+            });
+          } catch (socketError) {
+            logger.error('Socket broadcast failed:', socketError);
+            // Fallback to direct emit
+            const requestNamespace = io.of('/requests');
+            requestNamespace.to('available_mechanics').emit('new-request-available', {
+              requestId: serviceRequest._id,
+              location: parsedLocation,
+              issueType: serviceRequest.issueType,
+              priority: serviceRequest.priority,
+              estimatedCost: serviceRequest.quotation,
+              estimatedDuration: serviceRequest.estimatedDuration,
+              vehicleInfo: parsedVehicleInfo,
+              description: serviceRequest.description,
+              customerId: serviceRequest.customerId,
+              broadcastRadius: broadcastRadius,
+              timestamp: new Date()
+            });
+          }
+        } else {
+          logger.warn('Socket handlers not available for real-time broadcast');
+        }
+      } else {
+        logger.warn('No mechanics found within broadcast radius:', {
+          requestId: serviceRequest._id,
+          broadcastRadius: broadcastRadius,
+          location: parsedLocation
+        });
       }
     }
   } catch (error) {
@@ -232,7 +277,9 @@ const createServiceRequest = asyncHandler(async (req, res) => {
     issueType,
     location: parsedLocation,
     bookingType: isDirectBooking ? 'direct' : 'broadcast',
-    mechanicId: mechanicId || null
+    mechanicId: mechanicId || null,
+    broadcastRadius: broadcastRadius,
+    nearbyMechanicsCount: nearbyMechanics ? nearbyMechanics.length : 0
   });
 
   sendSuccessResponse(res, 201, 'Service request created successfully', {

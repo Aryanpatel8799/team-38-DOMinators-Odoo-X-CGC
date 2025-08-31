@@ -25,4 +25,11 @@ router.patch('/requests/:id/cancel', requestController.cancelRequest);
 // Upload routes
 router.post('/upload/images', uploadMiddleware.serviceImages, requestController.uploadImages);
 
+// Vehicle management routes
+router.get('/vehicles', customerController.getVehicles);
+router.post('/vehicles', validate(schemas.addVehicle), customerController.addVehicle);
+router.put('/vehicles/:vehicleId', validate(schemas.updateVehicle), customerController.updateVehicle);
+router.delete('/vehicles/:vehicleId', customerController.deleteVehicle);
+router.patch('/vehicles/:vehicleId/default', customerController.setDefaultVehicle);
+
 module.exports = router;

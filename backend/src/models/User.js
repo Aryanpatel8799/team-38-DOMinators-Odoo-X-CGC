@@ -2,20 +2,53 @@ const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const vehicleSchema = new mongoose.Schema({
+  name: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: [50, 'Vehicle name cannot exceed 50 characters']
+  },
   type: {
     type: String,
     required: true,
     enum: ['car', 'motorcycle', 'truck', 'bus', 'other']
   },
+  make: {
+    type: String,
+    required: true,
+    trim: true,
+    maxlength: [50, 'Make cannot exceed 50 characters']
+  },
   model: {
     type: String,
-    required: true
+    required: true,
+    trim: true,
+    maxlength: [50, 'Model cannot exceed 50 characters']
+  },
+  year: {
+    type: Number,
+    required: true,
+    min: [1900, 'Year must be at least 1900'],
+    max: [new Date().getFullYear() + 1, 'Year cannot be in the future']
   },
   plate: {
     type: String,
     required: true,
-    uppercase: true
+    uppercase: true,
+    trim: true,
+    maxlength: [20, 'License plate cannot exceed 20 characters']
+  },
+  color: {
+    type: String,
+    trim: true,
+    maxlength: [30, 'Color cannot exceed 30 characters']
+  },
+  isDefault: {
+    type: Boolean,
+    default: false
   }
+}, {
+  timestamps: true
 });
 
 const userSchema = new mongoose.Schema({

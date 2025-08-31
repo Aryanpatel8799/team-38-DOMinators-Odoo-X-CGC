@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { BellIcon, UserCircleIcon } from '@heroicons/react/24/outline';
+import { UserCircleIcon } from '@heroicons/react/24/outline';
 
 
 const Header = () => {
@@ -26,12 +26,6 @@ const Header = () => {
           </div>
           
           <div className="flex items-center space-x-4">
-            {/* Notifications */}
-            <button className="relative p-2 text-secondary-400 hover:text-secondary-600 transition-colors">
-              <BellIcon className="h-6 w-6" />
-              <span className="absolute top-0 right-0 block h-2 w-2 rounded-full bg-danger-400 ring-2 ring-white"></span>
-            </button>
-            
             {/* User menu */}
             <div className="relative">
               <button

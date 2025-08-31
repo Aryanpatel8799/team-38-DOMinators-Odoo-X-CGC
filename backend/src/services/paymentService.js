@@ -8,14 +8,43 @@ const notificationService = require('./notificationService');
 
 class PaymentService {
   constructor() {
+    // Use test credentials for development
+    const keyId = process.env.RAZORPAY_KEY_ID || 'rzp_test_51O8X8X8X8X8X8';
+    const keySecret = process.env.RAZORPAY_KEY_SECRET || 'test_secret_key_here';
+    
+    console.log('Initializing Razorpay with key ID:', keyId);
+    
     this.razorpay = new Razorpay({
-      key_id: process.env.RAZORPAY_KEY_ID,
-      key_secret: process.env.RAZORPAY_KEY_SECRET,
+      key_id: keyId,
+      key_secret: keySecret,
     });
 
     this.processingFeeRate = 0.02; // 2% processing fee
     this.minProcessingFee = 5; // Minimum ₹5
     this.maxProcessingFee = 200; // Maximum ₹200
+  }
+
+  // Create Razorpay order (for internal use)
+  async createOrder(orderData) {
+    try {
+      const razorpayOrder = await this.razorpay.orders.create({
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        receipt: orderData.receipt,
+        notes: orderData.notes || {}
+      });
+
+      logger.info('Razorpay order created:', {
+        orderId: razorpayOrder.id,
+        amount: orderData.amount,
+        receipt: orderData.receipt
+      });
+
+      return razorpayOrder;
+    } catch (error) {
+      logger.error('Razorpay order creation failed:', error);
+      throw error;
+    }
   }
 
   // Create payment order

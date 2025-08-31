@@ -9,11 +9,15 @@ import {
   CheckCircleIcon,
   XCircleIcon,
   WrenchScrewdriverIcon,
-  CreditCardIcon
+  CreditCardIcon,
+  StarIcon,
+  ChatBubbleLeftIcon
 } from '@heroicons/react/24/outline';
 import Button from '../../components/common/Button';
 import RequestTracker from '../../components/customer/RequestTracker';
 import PaymentModal from '../../components/payment/PaymentModal';
+import AddReview from '../../components/customer/AddReview';
+import ChatModal from '../../components/chat/ChatModal';
 import requestService from '../../services/requestService';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency, getRelativeTime } from '../../utils/helpers';
@@ -41,6 +45,9 @@ const RequestHistory = () => {
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [showTracker, setShowTracker] = useState(false);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [chatRequest, setChatRequest] = useState(null);
 
   const fetchRequests = useCallback(async () => {
     setLoading(true);
@@ -127,6 +134,23 @@ const RequestHistory = () => {
     fetchRequests(); // Refresh the list
   };
 
+  const handleReview = (request) => {
+    setSelectedRequest(request);
+    setShowReviewModal(true);
+  };
+
+  const handleReviewSuccess = () => {
+    setShowReviewModal(false);
+    setSelectedRequest(null);
+    fetchRequests();
+    toast.success('Review submitted successfully!');
+  };
+
+  const handleStartChat = (request) => {
+    setChatRequest(request);
+    setShowChatModal(true);
+  };
+
   const getStatusIcon = (status) => {
     switch (status) {
       case 'pending':
@@ -161,7 +185,23 @@ const RequestHistory = () => {
   };
 
   const canPay = (request) => {
-    return request.status === 'completed' && request.quotation && !request.paymentCompleted;
+    return request.status === 'completed' && request.quotation && !request.paymentCompleted && request.mechanic;
+  };
+
+  const canReview = (request) => {
+    const canReviewResult = request.status === 'completed' && request.mechanic && !request.review;
+    console.log('Can review check:', {
+      requestId: request._id,
+      status: request.status,
+      hasMechanic: !!request.mechanic,
+      hasReview: !!request.review,
+      canReview: canReviewResult
+    });
+    return Boolean(canReviewResult);
+  };
+
+  const canChat = (request) => {
+    return request.mechanic && ['assigned', 'enroute', 'in_progress', 'completed'].includes(request.status);
   };
 
   if (showTracker && selectedRequest) {
@@ -411,6 +451,28 @@ const RequestHistory = () => {
                         Pay Now
                       </Button>
                     )}
+
+                    {canReview(request) && (
+                      <Button
+                        variant="warning"
+                        size="sm"
+                        onClick={() => handleReview(request)}
+                        icon={<StarIcon className="h-4 w-4" />}
+                      >
+                        Add Review
+                      </Button>
+                    )}
+
+                    {canChat(request) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleStartChat(request)}
+                        icon={<ChatBubbleLeftIcon className="h-4 w-4" />}
+                      >
+                        Chat
+                      </Button>
+                    )}
                     
                     <Button
                       variant="outline"
@@ -438,6 +500,34 @@ const RequestHistory = () => {
           onPaymentSuccess={handlePaymentSuccess}
         />
       )}
+
+      {/* Review Modal */}
+      {showReviewModal && selectedRequest && (
+        <div className="fixed inset-0 z-50 overflow-y-auto">
+          <div className="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div className="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onClick={() => setShowReviewModal(false)}></div>
+
+            <div className="inline-block align-bottom bg-white rounded-lg text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full">
+              <div className="bg-white px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                <AddReview
+                  mechanicId={selectedRequest.mechanic._id}
+                  requestId={selectedRequest._id}
+                  onSuccess={handleReviewSuccess}
+                  onCancel={() => setShowReviewModal(false)}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Chat Modal */}
+      <ChatModal
+        isOpen={showChatModal}
+        onClose={() => setShowChatModal(false)}
+        mechanic={chatRequest?.mechanic}
+        serviceRequestId={chatRequest?._id}
+      />
     </div>
   );
 };

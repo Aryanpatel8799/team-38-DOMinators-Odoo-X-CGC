@@ -32,17 +32,46 @@ const initializeRequestSocket = (io) => {
       }
     });
 
+    // Join request room
+    socket.on('join_request', (data) => {
+      const { requestId } = data;
+      if (requestId) {
+        socket.join(`request_${requestId}`);
+        logger.info(`Client joined request room: ${requestId}`);
+      }
+    });
+
+    // Leave request room
+    socket.on('leave_request', (data) => {
+      const { requestId } = data;
+      if (requestId) {
+        socket.leave(`request_${requestId}`);
+        logger.info(`Client left request room: ${requestId}`);
+      }
+    });
+
     // Handle new service request
     socket.on('new-request', (requestData) => {
       logger.info('New service request received:', requestData);
       
-      // Broadcast to available mechanics in the area
+      // Broadcast to available mechanics in the area (25km radius)
       socket.to('available_mechanics').emit('new-request-available', {
         requestId: requestData.requestId,
         location: requestData.location,
-        serviceType: requestData.serviceType,
-        urgency: requestData.urgency,
-        estimatedCost: requestData.estimatedCost
+        issueType: requestData.issueType,
+        priority: requestData.priority,
+        estimatedCost: requestData.estimatedCost,
+        estimatedDuration: requestData.estimatedDuration,
+        vehicleInfo: requestData.vehicleInfo,
+        description: requestData.description,
+        customerId: requestData.customerId,
+        broadcastRadius: requestData.broadcastRadius || 25,
+        timestamp: new Date()
+      });
+      
+      logger.info('Service request broadcasted to available mechanics:', {
+        requestId: requestData.requestId,
+        broadcastRadius: requestData.broadcastRadius || 25
       });
     });
 
@@ -211,11 +240,43 @@ const initializeRequestSocket = (io) => {
     requestNamespace.to('available_mechanics').emit(event, data);
   };
 
+  // Helper function to broadcast service request to mechanics within 25km
+  const broadcastServiceRequest = (serviceRequest, nearbyMechanics) => {
+    const broadcastData = {
+      requestId: serviceRequest._id,
+      location: serviceRequest.location,
+      issueType: serviceRequest.issueType,
+      priority: serviceRequest.priority,
+      estimatedCost: serviceRequest.quotation,
+      estimatedDuration: serviceRequest.estimatedDuration,
+      vehicleInfo: serviceRequest.vehicleInfo,
+      description: serviceRequest.description,
+      customerId: serviceRequest.customerId,
+      broadcastRadius: serviceRequest.broadcastRadius || 25,
+      timestamp: new Date()
+    };
+
+    // Broadcast to all available mechanics
+    requestNamespace.to('available_mechanics').emit('new-request-available', broadcastData);
+    
+    // Also emit to specific mechanic rooms for those in range
+    nearbyMechanics.forEach(mechanic => {
+      requestNamespace.to(`mechanic_${mechanic._id}`).emit('new-request-available', broadcastData);
+    });
+
+    logger.info('Service request broadcasted to mechanics:', {
+      requestId: serviceRequest._id,
+      mechanicCount: nearbyMechanics.length,
+      broadcastRadius: serviceRequest.broadcastRadius || 25
+    });
+  };
+
   return {
     emitToUser,
     emitToMechanic,
     emitToRequest,
     emitToAvailableMechanics,
+    broadcastServiceRequest,
     requestNamespace
   };
 };

@@ -286,90 +286,461 @@ const updateProfile = async (req, res) => {
 
 /**
  * @swagger
- * /api/mechanic/availability:
- *   patch:
- *     summary: Update availability status
+ * /api/mechanic/stats:
+ *   get:
+ *     summary: Get mechanic statistics and earnings summary
  *     tags: [Mechanic]
  *     security:
  *       - bearerAuth: []
- *     requestBody:
- *       required: true
- *       content:
- *         application/json:
- *           schema:
- *             type: object
- *             required:
- *               - isAvailable
- *             properties:
- *               isAvailable:
- *                 type: boolean
- *               location:
- *                 $ref: '#/components/schemas/Location'
  *     responses:
  *       200:
- *         description: Availability updated successfully
- *       400:
- *         $ref: '#/components/responses/BadRequest'
+ *         description: Mechanic statistics retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
  */
-const updateAvailability = async (req, res) => {
+const getMechanicStats = async (req, res) => {
   try {
     const mechanicId = req.user.id;
-    const { isAvailable, location } = req.body;
 
-    const updateData = { 'availability.isAvailable': isAvailable };
-    
-    if (location) {
-      updateData.location = location;
-      updateData['availability.lastLocationUpdate'] = new Date();
-    }
-
-    const mechanic = await User.findByIdAndUpdate(
-      mechanicId,
-      { $set: updateData },
-      { new: true }
-    ).select('availability location name');
-
-    if (!mechanic) {
-      return res.status(404).json({
-        success: false,
-        message: 'Mechanic not found'
-      });
-    }
-
-    // Emit real-time update to admin dashboard
-    const io = req.app.get('io');
-    if (io) {
-      io.emit('mechanicAvailabilityUpdate', {
-        mechanicId,
-        name: mechanic.name,
-        isAvailable,
-        location: mechanic.location,
-        timestamp: new Date().toISOString()
-      });
-    }
-
-    logger.info('Mechanic availability updated', {
-      mechanicId,
-      isAvailable,
-      hasLocation: !!location
+    // Get total requests
+    const totalRequests = await ServiceRequest.countDocuments({
+      mechanicId: mechanicId
     });
+
+    // Get completed requests
+    const completedRequests = await ServiceRequest.countDocuments({
+      mechanicId: mechanicId,
+      status: 'completed'
+    });
+
+    // Get total earnings
+    const payments = await Payment.find({
+      mechanic: mechanicId,
+      status: 'success'
+    });
+
+    const totalEarnings = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+    // Get average rating
+    const reviews = await Review.find({
+      mechanicId: mechanicId
+    });
+
+    const averageRating = reviews.length > 0 
+      ? reviews.reduce((sum, review) => sum + review.rating, 0) / reviews.length 
+      : 0;
+
+    // Get this month earnings
+    const thisMonth = new Date();
+    thisMonth.setDate(1);
+    thisMonth.setHours(0, 0, 0, 0);
+
+    const thisMonthPayments = await Payment.find({
+      mechanic: mechanicId,
+      status: 'success',
+      createdAt: { $gte: thisMonth }
+    });
+
+    const thisMonthEarnings = thisMonthPayments.reduce((sum, payment) => sum + payment.amount, 0);
+
+    // Get last month earnings
+    const lastMonth = new Date(thisMonth);
+    lastMonth.setMonth(lastMonth.getMonth() - 1);
+
+    const lastMonthPayments = await Payment.find({
+      mechanic: mechanicId,
+      status: 'success',
+      createdAt: { $gte: lastMonth, $lt: thisMonth }
+    });
+
+    const lastMonthEarnings = lastMonthPayments.reduce((sum, payment) => sum + payment.amount, 0);
+
+    // Calculate growth
+    const growth = lastMonthEarnings > 0 
+      ? ((thisMonthEarnings - lastMonthEarnings) / lastMonthEarnings) * 100 
+      : 0;
 
     res.json({
       success: true,
-      message: `Availability ${isAvailable ? 'enabled' : 'disabled'} successfully`,
       data: {
-        isAvailable,
-        location: mechanic.location,
-        lastUpdate: new Date().toISOString()
+        totalRequests,
+        completedRequests,
+        totalEarnings,
+        averageRating,
+        totalReviews: reviews.length,
+        thisMonth: thisMonthEarnings,
+        lastMonth: lastMonthEarnings,
+        growth: Math.round(growth * 100) / 100
       }
     });
 
   } catch (error) {
-    logger.error('Error updating availability:', error);
+    logger.error('Error getting mechanic stats:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to update availability',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      message: 'Failed to get mechanic statistics'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/summary:
+ *   get:
+ *     summary: Get mechanic earnings summary for a specific period
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [week, month, quarter, year]
+ *         description: Time period for earnings summary
+ *     responses:
+ *       200:
+ *         description: Earnings summary retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const getEarningsSummary = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+    const { period = 'month' } = req.query;
+
+    let startDate = new Date();
+    let endDate = new Date();
+
+    switch (period) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'quarter':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+      case 'year':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    // Get payments for the period
+    const payments = await Payment.find({
+      mechanic: mechanicId,
+      status: 'success',
+      createdAt: { $gte: startDate, $lte: endDate }
+    }).populate('serviceRequest', 'issueType status');
+
+    const totalEarnings = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const totalRequests = payments.length;
+    const averageEarning = totalRequests > 0 ? totalEarnings / totalRequests : 0;
+
+    // Get previous period for comparison
+    const previousStartDate = new Date(startDate);
+    const previousEndDate = new Date(startDate);
+    previousStartDate.setTime(previousStartDate.getTime() - (endDate.getTime() - startDate.getTime()));
+
+    const previousPayments = await Payment.find({
+      mechanic: mechanicId,
+      status: 'success',
+      createdAt: { $gte: previousStartDate, $lt: startDate }
+    });
+
+    const previousEarnings = previousPayments.reduce((sum, payment) => sum + payment.amount, 0);
+    const growth = previousEarnings > 0 
+      ? ((totalEarnings - previousEarnings) / previousEarnings) * 100 
+      : 0;
+
+    res.json({
+      success: true,
+      data: {
+        totalEarnings,
+        totalRequests,
+        averageEarning: Math.round(averageEarning * 100) / 100,
+        thisMonth: totalEarnings,
+        lastMonth: previousEarnings,
+        growth: Math.round(growth * 100) / 100
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error getting earnings summary:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get earnings summary'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/detailed:
+ *   get:
+ *     summary: Get detailed mechanic earnings for a specific period
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [week, month, quarter, year]
+ *         description: Time period for detailed earnings
+ *     responses:
+ *       200:
+ *         description: Detailed earnings retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const getDetailedEarnings = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+    const { period = 'month' } = req.query;
+
+    let startDate = new Date();
+    let endDate = new Date();
+
+    switch (period) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'quarter':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+      case 'year':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const payments = await Payment.find({
+      mechanic: mechanicId,
+      createdAt: { $gte: startDate, $lte: endDate }
+    })
+    .populate('serviceRequest', 'issueType status')
+    .populate('customer', 'name phone')
+    .sort({ createdAt: -1 });
+
+    res.json({
+      success: true,
+      data: payments
+    });
+
+  } catch (error) {
+    logger.error('Error getting detailed earnings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get detailed earnings'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/chart:
+ *   get:
+ *     summary: Get chart data for mechanic earnings
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [week, month, quarter, year]
+ *         description: Time period for chart data
+ *     responses:
+ *       200:
+ *         description: Chart data retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const getEarningsChart = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+    const { period = 'month' } = req.query;
+
+    let startDate = new Date();
+    let endDate = new Date();
+    let intervals = 7;
+    let intervalType = 'day';
+
+    switch (period) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        intervals = 7;
+        intervalType = 'day';
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        intervals = 30;
+        intervalType = 'day';
+        break;
+      case 'quarter':
+        startDate.setMonth(startDate.getMonth() - 3);
+        intervals = 12;
+        intervalType = 'week';
+        break;
+      case 'year':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        intervals = 12;
+        intervalType = 'month';
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+        intervals = 30;
+        intervalType = 'day';
+    }
+
+    const chartData = [];
+    const intervalMs = (endDate.getTime() - startDate.getTime()) / intervals;
+
+    for (let i = 0; i < intervals; i++) {
+      const intervalStart = new Date(startDate.getTime() + (i * intervalMs));
+      const intervalEnd = new Date(intervalStart.getTime() + intervalMs);
+
+      const payments = await Payment.find({
+        mechanic: mechanicId,
+        status: 'success',
+        createdAt: { $gte: intervalStart, $lt: intervalEnd }
+      });
+
+      const amount = payments.reduce((sum, payment) => sum + payment.amount, 0);
+
+      let label;
+      if (intervalType === 'day') {
+        label = intervalStart.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+      } else if (intervalType === 'week') {
+        label = `Week ${Math.ceil((i + 1) / 7)}`;
+      } else {
+        label = intervalStart.toLocaleDateString('en-IN', { month: 'short' });
+      }
+
+      chartData.push({
+        label,
+        amount: Math.round(amount * 100) / 100,
+        date: intervalStart
+      });
+    }
+
+    res.json({
+      success: true,
+      data: chartData
+    });
+
+  } catch (error) {
+    logger.error('Error getting earnings chart:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get earnings chart data'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/earnings/export:
+ *   get:
+ *     summary: Export mechanic earnings data
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv, pdf]
+ *         description: Export format
+ *       - in: query
+ *         name: period
+ *         schema:
+ *           type: string
+ *           enum: [week, month, quarter, year]
+ *         description: Time period for export
+ *     responses:
+ *       200:
+ *         description: Export successful
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const exportEarnings = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+    const { format = 'csv', period = 'month' } = req.query;
+
+    let startDate = new Date();
+    let endDate = new Date();
+
+    switch (period) {
+      case 'week':
+        startDate.setDate(startDate.getDate() - 7);
+        break;
+      case 'month':
+        startDate.setMonth(startDate.getMonth() - 1);
+        break;
+      case 'quarter':
+        startDate.setMonth(startDate.getMonth() - 3);
+        break;
+      case 'year':
+        startDate.setFullYear(startDate.getFullYear() - 1);
+        break;
+      default:
+        startDate.setMonth(startDate.getMonth() - 1);
+    }
+
+    const payments = await Payment.find({
+      mechanic: mechanicId,
+      createdAt: { $gte: startDate, $lte: endDate }
+    })
+    .populate('serviceRequest', 'issueType status')
+    .populate('customer', 'name phone')
+    .sort({ createdAt: -1 });
+
+    if (format === 'csv') {
+      const csvData = [
+        ['Date', 'Service Type', 'Customer', 'Amount', 'Status', 'Payment ID']
+      ];
+
+      payments.forEach(payment => {
+        csvData.push([
+          new Date(payment.createdAt).toLocaleDateString('en-IN'),
+          payment.serviceRequest?.issueType?.replace('_', ' ').toUpperCase() || 'N/A',
+          payment.customer?.name || 'N/A',
+          payment.amount,
+          payment.status,
+          payment._id
+        ]);
+      });
+
+      const csvContent = csvData.map(row => row.join(',')).join('\n');
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename=earnings-${period}-${new Date().toISOString().split('T')[0]}.csv`);
+      res.send(csvContent);
+    } else {
+      res.status(400).json({
+        success: false,
+        message: 'Unsupported export format'
+      });
+    }
+
+  } catch (error) {
+    logger.error('Error exporting earnings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to export earnings data'
     });
   }
 };
@@ -408,28 +779,65 @@ const updateAvailability = async (req, res) => {
 const getAssignedRequests = async (req, res) => {
   try {
     const mechanicId = req.user.id;
-    const { status, page = 1, limit = 10 } = req.query;
+    const { status, page = 1, limit = 10, includeAvailable = false } = req.query;
 
-    // Build filter - show requests assigned to this mechanic (both pending direct bookings and assigned requests)
-    const filter = { mechanicId: mechanicId };
-    if (status) {
-      filter.status = status;
-    } else {
-      // If no status filter, show both pending and assigned requests
-      filter.status = { $in: ['pending', 'assigned', 'enroute', 'in_progress'] };
+    logger.info('Fetching mechanic requests:', {
+      mechanicId,
+      status,
+      includeAvailable,
+      page,
+      limit
+    });
+
+    let filter;
+    
+    try {
+      // For now, use simple filter to avoid complex query issues
+      filter = { mechanicId: mechanicId };
+      if (status) {
+        filter.status = status;
+      }
+      // Don't filter by status if no specific status is requested - show all requests
+
+      logger.info('Using simple filter:', JSON.stringify(filter, null, 2));
+    } catch (filterError) {
+      logger.error('Error building filter:', filterError);
+      // Fallback to simple assigned requests filter
+      filter = { mechanicId: mechanicId };
+      if (status) {
+        filter.status = status;
+      }
+      // Don't filter by status if no specific status is requested - show all requests
     }
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
 
-    const [requests, totalRequests] = await Promise.all([
-      ServiceRequest.find(filter)
-        .populate('customerId', 'name email phone')
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit))
-        .lean(),
-      ServiceRequest.countDocuments(filter)
-    ]);
+    logger.info('Executing database query with filter:', JSON.stringify(filter, null, 2));
+
+    let requests, totalRequests;
+    try {
+      [requests, totalRequests] = await Promise.all([
+        ServiceRequest.find(filter)
+          .populate('customerId', 'name email phone')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        ServiceRequest.countDocuments(filter)
+      ]);
+    } catch (queryError) {
+      logger.error('Database query failed:', queryError);
+      // Fallback to simple query
+      [requests, totalRequests] = await Promise.all([
+        ServiceRequest.find({ mechanicId: mechanicId })
+          .populate('customerId', 'name email phone')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(parseInt(limit))
+          .lean(),
+        ServiceRequest.countDocuments({ mechanicId: mechanicId })
+      ]);
+    }
 
     const totalPages = Math.ceil(totalRequests / parseInt(limit));
 
@@ -443,7 +851,8 @@ const getAssignedRequests = async (req, res) => {
       success: true,
       message: 'Service requests retrieved successfully',
       data: {
-        requests,
+        items: requests, // Changed from 'requests' to 'items' to match frontend expectation
+        requests, // Keep for backward compatibility
         pagination: {
           currentPage: parseInt(page),
           totalPages,
@@ -1056,6 +1465,242 @@ const updateRequestStatus = async (req, res) => {
   }
 };
 
+/**
+ * @swagger
+ * /api/mechanic/service-areas:
+ *   get:
+ *     summary: Get mechanic service areas
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Service areas retrieved successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const getServiceAreas = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+
+    // For now, we'll return the mechanic's service radius and location
+    // In a full implementation, you'd have a separate ServiceArea model
+    const mechanic = await User.findById(mechanicId);
+    
+    if (!mechanic) {
+      return res.status(404).json({
+        success: false,
+        message: 'Mechanic not found'
+      });
+    }
+
+    // Create a default service area based on mechanic's location
+    const serviceAreas = [{
+      _id: 'default',
+      name: 'Primary Service Area',
+      radius: mechanic.serviceRadius || 10,
+      isActive: true,
+      center: {
+        lat: mechanic.location?.lat || 0,
+        lng: mechanic.location?.lng || 0
+      }
+    }];
+
+    res.json({
+      success: true,
+      data: serviceAreas
+    });
+
+  } catch (error) {
+    logger.error('Error getting service areas:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get service areas'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/service-areas:
+ *   post:
+ *     summary: Add new service area for mechanic
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - name
+ *               - radius
+ *             properties:
+ *               name:
+ *                 type: string
+ *                 description: Name of the service area
+ *               radius:
+ *                 type: number
+ *                 description: Service radius in kilometers
+ *               isActive:
+ *                 type: boolean
+ *                 description: Whether the area is active
+ *     responses:
+ *       201:
+ *         description: Service area added successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const addServiceArea = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+    const { name, radius, isActive = true } = req.body;
+
+    if (!name || !radius) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name and radius are required'
+      });
+    }
+
+    // In a full implementation, you'd save this to a ServiceArea model
+    // For now, we'll update the mechanic's service radius
+    await User.findByIdAndUpdate(mechanicId, {
+      serviceRadius: radius
+    });
+
+    const newServiceArea = {
+      _id: Date.now().toString(),
+      name,
+      radius,
+      isActive,
+      center: {
+        lat: 0,
+        lng: 0
+      }
+    };
+
+    res.status(201).json({
+      success: true,
+      data: newServiceArea
+    });
+
+  } catch (error) {
+    logger.error('Error adding service area:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add service area'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/service-areas/{areaId}:
+ *   delete:
+ *     summary: Remove service area for mechanic
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: areaId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: Service area ID
+ *     responses:
+ *       200:
+ *         description: Service area removed successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const removeServiceArea = async (req, res) => {
+  try {
+    const { areaId } = req.params;
+    const mechanicId = req.user.id;
+
+    // In a full implementation, you'd delete from ServiceArea model
+    // For now, we'll just return success
+    if (areaId === 'default') {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot remove default service area'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Service area removed successfully'
+    });
+
+  } catch (error) {
+    logger.error('Error removing service area:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove service area'
+    });
+  }
+};
+
+/**
+ * @swagger
+ * /api/mechanic/availability:
+ *   patch:
+ *     summary: Update mechanic availability
+ *     tags: [Mechanic]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - isAvailable
+ *             properties:
+ *               isAvailable:
+ *                 type: boolean
+ *                 description: Whether the mechanic is available for new requests
+ *     responses:
+ *       200:
+ *         description: Availability updated successfully
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ */
+const updateAvailability = async (req, res) => {
+  try {
+    const mechanicId = req.user.id;
+    const { isAvailable } = req.body;
+
+    if (typeof isAvailable !== 'boolean') {
+      return res.status(400).json({
+        success: false,
+        message: 'isAvailable must be a boolean'
+      });
+    }
+
+    await User.findByIdAndUpdate(mechanicId, {
+      isAvailable
+    });
+
+    res.json({
+      success: true,
+      message: `Mechanic is now ${isAvailable ? 'available' : 'unavailable'} for requests`
+    });
+
+  } catch (error) {
+    logger.error('Error updating availability:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update availability'
+    });
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
@@ -1065,5 +1710,14 @@ module.exports = {
   startWork,
   completeRequest,
   updateRequestStatus,
-  getEarnings
+  getEarnings,
+  getMechanicStats,
+  getEarningsSummary,
+  getDetailedEarnings,
+  getEarningsChart,
+  exportEarnings,
+  getServiceAreas,
+  addServiceArea,
+  removeServiceArea,
+  updateAvailability
 };

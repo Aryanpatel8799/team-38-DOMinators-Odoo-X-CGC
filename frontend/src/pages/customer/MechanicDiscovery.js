@@ -9,7 +9,8 @@ import {
   ClockIcon,
   ViewColumnsIcon,
   MapIcon,
-  EyeIcon
+  EyeIcon,
+  ChatBubbleLeftIcon
 } from '@heroicons/react/24/outline';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -20,6 +21,7 @@ import toast from 'react-hot-toast';
 import Button from '../../components/common/Button';
 import Input from '../../components/common/Input';
 import Select from '../../components/common/Select';
+import ChatModal from '../../components/chat/ChatModal';
 
 // Fix for default markers in react-leaflet
 delete L.Icon.Default.prototype._getIconUrl;
@@ -64,6 +66,8 @@ const MechanicDiscovery = () => {
   const [viewMode, setViewMode] = useState('card'); // 'card' or 'map'
   const [selectedMechanic, setSelectedMechanic] = useState(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showChatModal, setShowChatModal] = useState(false);
+  const [chatMechanic, setChatMechanic] = useState(null);
   const [userLocation, setUserLocation] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const [filters, setFilters] = useState({
@@ -188,6 +192,11 @@ const MechanicDiscovery = () => {
     const url = `/customer/book-service?mechanicId=${mechanic._id}`;
     console.log('Navigation URL:', url);
     navigate(url);
+  };
+
+  const handleStartChat = (mechanic) => {
+    setChatMechanic(mechanic);
+    setShowChatModal(true);
   };
 
   const getRatingStars = (rating) => {
@@ -381,6 +390,14 @@ const MechanicDiscovery = () => {
                     View Details
                   </Button>
                   <Button
+                    variant="outline"
+                    onClick={() => handleStartChat(mechanic)}
+                    className="flex-1"
+                  >
+                    <ChatBubbleLeftIcon className="h-4 w-4 mr-2" />
+                    Chat
+                  </Button>
+                  <Button
                     variant="primary"
                     onClick={() => handleBookService(mechanic)}
                     className="flex-1"
@@ -453,6 +470,12 @@ const MechanicDiscovery = () => {
                           className="text-xs bg-blue-500 text-white px-2 py-1 rounded hover:bg-blue-600"
                         >
                           View Details
+                        </button>
+                        <button
+                          onClick={() => handleStartChat(mechanic)}
+                          className="text-xs bg-purple-500 text-white px-2 py-1 rounded hover:bg-purple-600"
+                        >
+                          Chat
                         </button>
                         <button
                           onClick={() => handleBookService(mechanic)}
@@ -556,6 +579,14 @@ const MechanicDiscovery = () => {
                   Close
                 </Button>
                 <Button
+                  variant="outline"
+                  onClick={() => handleStartChat(selectedMechanic)}
+                  className="flex-1"
+                >
+                  <ChatBubbleLeftIcon className="h-4 w-4 mr-2" />
+                  Chat
+                </Button>
+                <Button
                   variant="primary"
                   onClick={() => handleBookService(selectedMechanic)}
                   className="flex-1"
@@ -568,6 +599,13 @@ const MechanicDiscovery = () => {
           </div>
         </div>
       )}
+
+      {/* Chat Modal */}
+      <ChatModal
+        isOpen={showChatModal}
+        onClose={() => setShowChatModal(false)}
+        mechanic={chatMechanic}
+      />
     </div>
   );
 };

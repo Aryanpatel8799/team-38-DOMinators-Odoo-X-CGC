@@ -14,7 +14,7 @@ export const API_ENDPOINTS = {
   CUSTOMER_PROFILE: '/customer/profile',
   CUSTOMER_REQUESTS: '/customer/requests',
   CUSTOMER_REVIEWS: '/customer/reviews',
-  CUSTOMER_PAYMENTS: '/customer/payments',
+  CUSTOMER_PAYMENTS: '/payments',
   CUSTOMER_VEHICLES: '/customer/vehicles',
 
   // Mechanic

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { XMarkIcon, CreditCardIcon, CheckCircleIcon } from '@heroicons/react/24/outline';
 import Button from '../common/Button';
-import paymentService from '../../services/paymentService';
+import paymentApi from '../../api/paymentApi';
 import { useAuth } from '../../contexts/AuthContext';
 import { formatCurrency } from '../../utils/helpers';
 import toast from 'react-hot-toast';
@@ -23,12 +23,73 @@ const PaymentModal = ({
   useEffect(() => {
     if (isOpen) {
       // Load Razorpay SDK when modal opens
-      paymentService.loadRazorpaySDK().catch(error => {
+      loadRazorpaySDK().catch(error => {
         console.error('Failed to load Razorpay SDK:', error);
         setError('Payment system unavailable. Please try again later.');
       });
     }
   }, [isOpen]);
+
+  const loadRazorpaySDK = () => {
+    return new Promise((resolve, reject) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => reject(new Error('Failed to load Razorpay SDK'));
+      document.head.appendChild(script);
+    });
+  };
+
+  const processRazorpayPayment = (orderData) => {
+    return new Promise((resolve, reject) => {
+      if (!window.Razorpay) {
+        reject(new Error('Razorpay SDK not loaded'));
+        return;
+      }
+
+      const options = {
+        key: 'rzp_test_51O8X8X8X8X8X8', // Test key for development
+        amount: orderData.amount,
+        currency: orderData.currency || 'INR',
+        name: 'RoadGuard',
+        description: 'Service Payment',
+        order_id: orderData.orderId,
+        handler: function (response) {
+          console.log('Payment successful:', response);
+          resolve({
+            razorpayPaymentId: response.razorpay_payment_id,
+            razorpayOrderId: response.razorpay_order_id,
+            razorpaySignature: response.razorpay_signature,
+          });
+        },
+        prefill: {
+          name: orderData.customerName || 'Test Customer',
+          email: orderData.customerEmail || 'test@example.com',
+          contact: orderData.customerPhone || '9999999999',
+        },
+        theme: {
+          color: '#0ea5e9',
+        },
+        modal: {
+          ondismiss: function () {
+            console.log('Payment modal dismissed');
+            reject(new Error('Payment cancelled by user'));
+          },
+        },
+        notes: {
+          service_request_id: orderData.serviceRequestId || 'test_request',
+        },
+      };
+
+      const razorpayInstance = new window.Razorpay(options);
+      razorpayInstance.open();
+    });
+  };
 
   const resetModal = () => {
     setPaymentStep('details');
@@ -50,39 +111,45 @@ const PaymentModal = ({
       // Step 1: Create payment order
       setPaymentStep('processing');
       
-      const orderResponse = await paymentService.createPaymentOrder({
-        serviceRequestId: serviceRequest._id,
-        amount: amount,
-        currency: 'INR'
-      });
+      console.log('Creating payment order for service request:', serviceRequest._id);
+      const orderResponse = await paymentApi.createPostCompletionPaymentOrder(serviceRequest._id);
+      
 
       if (!orderResponse.success) {
         throw new Error(orderResponse.message || 'Failed to create payment order');
       }
 
-      const { order, payment } = orderResponse.data;
+      const { orderId, amount, currency, paymentId } = orderResponse.data;
+      console.log('Payment order created:', { orderId, amount, currency, paymentId });
 
       // Step 2: Process payment with Razorpay
-      const razorpayResult = await paymentService.processRazorpayPayment({
-        orderId: order.id,
-        amount: order.amount,
-        currency: order.currency,
-        customerName: user.name,
-        customerEmail: user.email,
-        customerPhone: user.phone
-      });
+      const paymentData = {
+        orderId: orderId,
+        amount: amount,
+        currency: currency,
+        customerName: user?.name || 'Test Customer',
+        customerEmail: user?.email || 'test@example.com',
+        customerPhone: user?.phone || '9999999999',
+        serviceRequestId: serviceRequest._id
+      };
+
+      console.log('Processing payment with Razorpay:', paymentData);
+      const razorpayResult = await processRazorpayPayment(paymentData);
+      console.log('Razorpay payment result:', razorpayResult);
 
       // Step 3: Verify payment on backend
       const verificationData = {
-        paymentId: payment._id,
+        paymentId: paymentId,
         razorpayPaymentId: razorpayResult.razorpayPaymentId,
         razorpayOrderId: razorpayResult.razorpayOrderId,
         razorpaySignature: razorpayResult.razorpaySignature
       };
 
-      const verificationResponse = await paymentService.verifyPayment(verificationData);
+      console.log('Verifying payment:', verificationData);
+      const verificationResponse = await paymentApi.verifyPayment(verificationData);
 
       if (verificationResponse.success) {
+        console.log('Payment verified successfully');
         setPaymentData(verificationResponse.data);
         setPaymentStep('success');
         
@@ -98,7 +165,15 @@ const PaymentModal = ({
 
     } catch (error) {
       console.error('Payment error:', error);
-      setError(error.message || 'Payment failed. Please try again.');
+      let errorMessage = 'Payment failed. Please try again.';
+      
+      if (error.response?.data?.message) {
+        errorMessage = error.response.data.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
       setPaymentStep('failed');
       
       // Call failure callback
@@ -106,7 +181,7 @@ const PaymentModal = ({
         onPaymentFailure(error);
       }
       
-      toast.error('Payment failed. Please try again.');
+      toast.error(errorMessage);
     } finally {
       setLoading(false);
     }

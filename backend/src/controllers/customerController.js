@@ -2,6 +2,7 @@ const User = require('../models/User');
 const ServiceRequest = require('../models/ServiceRequest');
 const Payment = require('../models/Payment');
 const logger = require('../config/logger');
+const mongoose = require('mongoose');
 
 /**
  * Get nearby mechanics within specified distance
@@ -311,11 +312,363 @@ const deg2rad = (deg) => {
   return deg * (Math.PI / 180);
 };
 
+/**
+ * Get customer's saved vehicles
+ */
+const getVehicles = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    
+    const customer = await User.findById(customerId).select('vehicles');
+    
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    logger.info('Vehicles retrieved', {
+      customerId,
+      vehicleCount: customer.vehicles.length
+    });
+
+    res.json({
+      success: true,
+      message: 'Vehicles retrieved successfully',
+      data: customer.vehicles
+    });
+
+  } catch (error) {
+    logger.error('Error fetching vehicles:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch vehicles',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Add a new vehicle to customer's profile
+ */
+const addVehicle = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    const { name, type, make, model, year, plate, color, isDefault = false } = req.body;
+
+    // Validate required fields
+    if (!name || !type || !make || !model || !year || !plate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, type, make, model, year, and plate are required'
+      });
+    }
+
+    // Validate vehicle type
+    const validTypes = ['car', 'motorcycle', 'truck', 'bus', 'other'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid vehicle type'
+      });
+    }
+
+    // Check if plate number already exists for this customer
+    const existingVehicle = await User.findOne({
+      _id: customerId,
+      'vehicles.plate': plate.toUpperCase()
+    });
+
+    if (existingVehicle) {
+      return res.status(400).json({
+        success: false,
+        message: 'A vehicle with this license plate already exists'
+      });
+    }
+
+    const customer = await User.findById(customerId);
+    
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // If this is set as default, unset other defaults
+    if (isDefault) {
+      customer.vehicles.forEach(vehicle => {
+        vehicle.isDefault = false;
+      });
+    }
+
+    // Add new vehicle
+    const newVehicle = {
+      name,
+      type,
+      make,
+      model,
+      year: parseInt(year),
+      plate: plate.toUpperCase(),
+      color,
+      isDefault
+    };
+
+    customer.vehicles.push(newVehicle);
+    await customer.save();
+
+    logger.info('Vehicle added', {
+      customerId,
+      vehicleId: newVehicle._id,
+      plate: newVehicle.plate
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Vehicle added successfully',
+      data: newVehicle
+    });
+
+  } catch (error) {
+    logger.error('Error adding vehicle:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add vehicle',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Update a vehicle
+ */
+const updateVehicle = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    const { vehicleId } = req.params;
+    const { name, type, make, model, year, plate, color, isDefault = false } = req.body;
+
+    // Validate required fields
+    if (!name || !type || !make || !model || !year || !plate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Name, type, make, model, year, and plate are required'
+      });
+    }
+
+    // Validate vehicle type
+    const validTypes = ['car', 'motorcycle', 'truck', 'bus', 'other'];
+    if (!validTypes.includes(type)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid vehicle type'
+      });
+    }
+
+    // Check if plate number already exists for another vehicle of this customer
+    const existingVehicle = await User.findOne({
+      _id: customerId,
+      'vehicles.plate': plate.toUpperCase(),
+      'vehicles._id': { $ne: vehicleId }
+    });
+
+    if (existingVehicle) {
+      return res.status(400).json({
+        success: false,
+        message: 'A vehicle with this license plate already exists'
+      });
+    }
+
+    const customer = await User.findById(customerId);
+    
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // Find the vehicle to update
+    const vehicleIndex = customer.vehicles.findIndex(
+      vehicle => vehicle._id.toString() === vehicleId
+    );
+
+    if (vehicleIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vehicle not found'
+      });
+    }
+
+    // If this is set as default, unset other defaults
+    if (isDefault) {
+      customer.vehicles.forEach(vehicle => {
+        vehicle.isDefault = false;
+      });
+    }
+
+    // Update the vehicle
+    customer.vehicles[vehicleIndex] = {
+      ...customer.vehicles[vehicleIndex],
+      name,
+      type,
+      make,
+      model,
+      year: parseInt(year),
+      plate: plate.toUpperCase(),
+      color,
+      isDefault
+    };
+
+    await customer.save();
+
+    logger.info('Vehicle updated', {
+      customerId,
+      vehicleId,
+      plate: customer.vehicles[vehicleIndex].plate
+    });
+
+    res.json({
+      success: true,
+      message: 'Vehicle updated successfully',
+      data: customer.vehicles[vehicleIndex]
+    });
+
+  } catch (error) {
+    logger.error('Error updating vehicle:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update vehicle',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Delete a vehicle
+ */
+const deleteVehicle = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    const { vehicleId } = req.params;
+
+    const customer = await User.findById(customerId);
+    
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // Find the vehicle to delete
+    const vehicleIndex = customer.vehicles.findIndex(
+      vehicle => vehicle._id.toString() === vehicleId
+    );
+
+    if (vehicleIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vehicle not found'
+      });
+    }
+
+    const deletedVehicle = customer.vehicles[vehicleIndex];
+    customer.vehicles.splice(vehicleIndex, 1);
+    await customer.save();
+
+    logger.info('Vehicle deleted', {
+      customerId,
+      vehicleId,
+      plate: deletedVehicle.plate
+    });
+
+    res.json({
+      success: true,
+      message: 'Vehicle deleted successfully'
+    });
+
+  } catch (error) {
+    logger.error('Error deleting vehicle:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete vehicle',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
+/**
+ * Set a vehicle as default
+ */
+const setDefaultVehicle = async (req, res) => {
+  try {
+    const customerId = req.user.id;
+    const { vehicleId } = req.params;
+
+    const customer = await User.findById(customerId);
+    
+    if (!customer) {
+      return res.status(404).json({
+        success: false,
+        message: 'Customer not found'
+      });
+    }
+
+    // Find the vehicle to set as default
+    const vehicleIndex = customer.vehicles.findIndex(
+      vehicle => vehicle._id.toString() === vehicleId
+    );
+
+    if (vehicleIndex === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Vehicle not found'
+      });
+    }
+
+    // Unset all other defaults
+    customer.vehicles.forEach(vehicle => {
+      vehicle.isDefault = false;
+    });
+
+    // Set this vehicle as default
+    customer.vehicles[vehicleIndex].isDefault = true;
+    await customer.save();
+
+    logger.info('Default vehicle set', {
+      customerId,
+      vehicleId,
+      plate: customer.vehicles[vehicleIndex].plate
+    });
+
+    res.json({
+      success: true,
+      message: 'Default vehicle set successfully',
+      data: customer.vehicles[vehicleIndex]
+    });
+
+  } catch (error) {
+    logger.error('Error setting default vehicle:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to set default vehicle',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+};
+
 module.exports = {
   getNearbyMechanics,
   getMechanicDetails,
   createServiceRequest,
-  getServiceRequests
+  getServiceRequests,
+  getVehicles,
+  addVehicle,
+  updateVehicle,
+  deleteVehicle,
+  setDefaultVehicle
 };
 
 

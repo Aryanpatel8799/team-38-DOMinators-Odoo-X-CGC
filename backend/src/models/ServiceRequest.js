@@ -125,9 +125,13 @@ const serviceRequestSchema = new mongoose.Schema({
   },
   broadcastRadius: {
     type: Number,
-    default: 10, // kilometers
+    default: 25, // kilometers
     min: [1, 'Broadcast radius must be at least 1 km'],
     max: [50, 'Broadcast radius cannot exceed 50 km']
+  },
+  isDirectChat: {
+    type: Boolean,
+    default: false
   },
   acceptedAt: Date,
   startedAt: Date,

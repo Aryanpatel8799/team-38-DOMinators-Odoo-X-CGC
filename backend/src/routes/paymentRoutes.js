@@ -72,6 +72,42 @@ router.post('/create-order',
 
 /**
  * @swagger
+ * /api/payments/create-post-completion-order:
+ *   post:
+ *     summary: Create payment order after work completion
+ *     tags: [Payments]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - serviceRequestId
+ *             properties:
+ *               serviceRequestId:
+ *                 type: string
+ *                 description: ID of the completed service request
+ *     responses:
+ *       201:
+ *         description: Payment order created successfully
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       404:
+ *         $ref: '#/components/responses/NotFound'
+ */
+router.post('/create-post-completion-order',
+  authorize(['customer']),
+  paymentLimiter,
+  paymentController.createPostCompletionPaymentOrder
+);
+
+/**
+ * @swagger
  * /api/payments/verify:
  *   post:
  *     summary: Verify payment after successful transaction

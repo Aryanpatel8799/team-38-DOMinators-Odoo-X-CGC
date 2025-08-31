@@ -1,363 +1,222 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  CreditCardIcon, 
-  DocumentTextIcon,
-  CalendarDaysIcon,
-  FunnelIcon,
-  ArrowDownTrayIcon,
-  EyeIcon
-} from '@heroicons/react/24/outline';
-import Button from '../../components/common/Button';
-import PaymentReceiptModal from '../../components/payment/PaymentReceiptModal';
-import paymentService from '../../services/paymentService';
-import { formatDate, formatCurrency } from '../../utils/helpers';
-import { PAYMENT_STATUS_LABELS } from '../../utils/constants';
+import { CreditCardIcon, CalendarIcon, ClockIcon, CheckCircleIcon, XCircleIcon } from '@heroicons/react/24/outline';
+import paymentApi from '../../api/paymentApi';
+import { formatCurrency, formatDate } from '../../utils/helpers';
 import toast from 'react-hot-toast';
 
 const PaymentHistory = () => {
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPayment, setSelectedPayment] = useState(null);
-  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [error, setError] = useState(null);
   const [filters, setFilters] = useState({
     status: '',
-    dateRange: '30',
-    search: ''
-  });
-  const [pagination, setPagination] = useState({
-    page: 1,
-    limit: 10,
-    total: 0,
-    totalPages: 0
+    startDate: '',
+    endDate: ''
   });
 
   useEffect(() => {
-    fetchPayments();
-  }, [filters, pagination.page]);
+    fetchPaymentHistory();
+  }, [filters]);
 
-  const fetchPayments = async () => {
+  const fetchPaymentHistory = async () => {
     try {
       setLoading(true);
-      const response = await paymentService.getPaymentHistory({
-        page: pagination.page,
-        limit: pagination.limit,
-        ...filters
+      const response = await paymentApi.getPaymentHistory({
+        status: filters.status || undefined,
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate || undefined
       });
-      
+
       if (response.success) {
-        setPayments(response.data.items || []);
-        setPagination(prev => ({
-          ...prev,
-          total: response.data.pagination?.total || 0,
-          totalPages: response.data.pagination?.totalPages || 0
-        }));
+        setPayments(response.data.payments || []);
+      } else {
+        setError(response.message || 'Failed to fetch payment history');
       }
     } catch (error) {
-      console.error('Error fetching payments:', error);
+      console.error('Error fetching payment history:', error);
+      setError('Failed to load payment history');
       toast.error('Failed to load payment history');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleFilterChange = (field, value) => {
-    setFilters(prev => ({
-      ...prev,
-      [field]: value
-    }));
-    setPagination(prev => ({ ...prev, page: 1 }));
-  };
-
-  const handleViewReceipt = (payment) => {
-    setSelectedPayment(payment);
-    setShowReceiptModal(true);
-  };
-
-  const handleDownloadReceipt = async (paymentId) => {
-    try {
-      // This would download the receipt
-      toast.success('Receipt downloaded successfully!');
-    } catch (error) {
-      console.error('Error downloading receipt:', error);
-      toast.error('Failed to download receipt');
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircleIcon className="h-5 w-5 text-green-500" />;
+      case 'failed':
+        return <XCircleIcon className="h-5 w-5 text-red-500" />;
+      case 'pending':
+        return <ClockIcon className="h-5 w-5 text-yellow-500" />;
+      default:
+        return <ClockIcon className="h-5 w-5 text-gray-500" />;
     }
   };
 
   const getStatusColor = (status) => {
     switch (status) {
       case 'completed':
-      case 'success':
-        return 'bg-success-100 text-success-800';
-      case 'pending':
-        return 'bg-warning-100 text-warning-800';
+        return 'text-green-600 bg-green-50';
       case 'failed':
-        return 'bg-danger-100 text-danger-800';
-      case 'refunded':
-        return 'bg-secondary-100 text-secondary-800';
+        return 'text-red-600 bg-red-50';
+      case 'pending':
+        return 'text-yellow-600 bg-yellow-50';
       default:
-        return 'bg-secondary-100 text-secondary-800';
+        return 'text-gray-600 bg-gray-50';
     }
   };
 
-  if (loading && payments.length === 0) {
+  if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary-600"></div>
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-bold text-secondary-900">Payment History</h1>
-          <p className="text-secondary-600 mt-1">View and manage your payment transactions</p>
-        </div>
-        <div className="mt-4 sm:mt-0">
-          <Button
-            variant="outline"
-            size="sm"
-            icon={<ArrowDownTrayIcon className="w-4 h-4" />}
-            onClick={() => toast.info('Export feature coming soon!')}
-          >
-            Export
-          </Button>
-        </div>
+    <div className="space-y-6">
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-bold text-gray-900">Payment History</h1>
+        <CreditCardIcon className="h-8 w-8 text-primary-600" />
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-lg shadow-card p-6">
-        <div className="flex items-center space-x-4 mb-4">
-          <FunnelIcon className="w-5 h-5 text-secondary-500" />
-          <span className="font-medium text-secondary-900">Filters</span>
-        </div>
-        
+      <div className="bg-white p-4 rounded-lg shadow-sm border">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Filters</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
               Status
             </label>
             <select
               value={filters.status}
-              onChange={(e) => handleFilterChange('status', e.target.value)}
-              className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
             >
-              <option value="">All Statuses</option>
-              <option value="success">Completed</option>
+              <option value="">All Status</option>
+              <option value="completed">Completed</option>
               <option value="pending">Pending</option>
               <option value="failed">Failed</option>
-              <option value="refunded">Refunded</option>
             </select>
           </div>
           
           <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-1">
-              Date Range
-            </label>
-            <select
-              value={filters.dateRange}
-              onChange={(e) => handleFilterChange('dateRange', e.target.value)}
-              className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
-            >
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 3 months</option>
-              <option value="365">Last year</option>
-              <option value="">All time</option>
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-secondary-700 mb-1">
-              Search
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Start Date
             </label>
             <input
-              type="text"
-              placeholder="Search by transaction ID..."
-              value={filters.search}
-              onChange={(e) => handleFilterChange('search', e.target.value)}
-              className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+              type="date"
+              value={filters.startDate}
+              onChange={(e) => setFilters(prev => ({ ...prev, startDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+            />
+          </div>
+          
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              End Date
+            </label>
+            <input
+              type="date"
+              value={filters.endDate}
+              onChange={(e) => setFilters(prev => ({ ...prev, endDate: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
             />
           </div>
         </div>
       </div>
 
-      {/* Payments List */}
-      <div className="bg-white rounded-lg shadow-card overflow-hidden">
-        {payments.length === 0 ? (
-          <div className="text-center py-12">
-            <CreditCardIcon className="mx-auto h-12 w-12 text-secondary-400" />
-            <h3 className="mt-2 text-sm font-medium text-secondary-900">No payments found</h3>
-            <p className="mt-1 text-sm text-secondary-500">
-              {filters.status || filters.search
-                ? 'Try adjusting your filters to see more results.'
-                : 'Your payment history will appear here after you make payments.'}
-            </p>
+      {/* Payment List */}
+      <div className="bg-white rounded-lg shadow-sm border">
+        {error ? (
+          <div className="p-6 text-center">
+            <p className="text-red-600">{error}</p>
+            <button
+              onClick={fetchPaymentHistory}
+              className="mt-2 px-4 py-2 bg-primary-600 text-white rounded-md hover:bg-primary-700"
+            >
+              Retry
+            </button>
+          </div>
+        ) : payments.length === 0 ? (
+          <div className="p-6 text-center">
+            <CreditCardIcon className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+            <p className="text-gray-500">No payment history found</p>
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-secondary-200">
-                <thead className="bg-secondary-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider">
-                      Transaction
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider">
-                      Service
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider">
-                      Amount
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider">
-                      Date
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-secondary-200">
-                  {payments.map((payment) => (
-                    <tr key={payment._id} className="hover:bg-secondary-50">
-                      <td className="px-6 py-4 whitespace-nowrap">
+          <div className="overflow-hidden">
+            <table className="min-w-full divide-y divide-gray-200">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Payment
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Service
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Amount
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Status
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date
+                  </th>
+                </tr>
+              </thead>
+              <tbody className="bg-white divide-y divide-gray-200">
+                {payments.map((payment) => (
+                  <tr key={payment._id} className="hover:bg-gray-50">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        <CreditCardIcon className="h-5 w-5 text-gray-400 mr-2" />
                         <div>
-                          <div className="text-sm font-medium text-secondary-900">
-                            #{payment.transactionId || payment._id.slice(-6)}
+                          <div className="text-sm font-medium text-gray-900">
+                            {payment.razorpayPaymentId || payment._id.slice(-8)}
                           </div>
-                          <div className="text-sm text-secondary-500">
-                            {payment.paymentMethod || 'Card'}
+                          <div className="text-sm text-gray-500">
+                            {payment.paymentMethod || 'Online Payment'}
                           </div>
                         </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm text-secondary-900">
-                          {payment.serviceRequest?.issueType?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Service Request'}
-                        </div>
-                        <div className="text-sm text-secondary-500">
-                          Request #{payment.serviceRequest?._id?.slice(-6) || 'N/A'}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-secondary-900">
-                          {formatCurrency(payment.amount)}
-                        </div>
-                        {payment.tip > 0 && (
-                          <div className="text-xs text-secondary-500">
-                            +{formatCurrency(payment.tip)} tip
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(payment.status)}`}>
-                          {PAYMENT_STATUS_LABELS[payment.status] || payment.status}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm text-gray-900">
+                        {payment.serviceRequest?.issueType?.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'N/A'}
+                      </div>
+                      <div className="text-sm text-gray-500">
+                        {payment.serviceRequest?.vehicleInfo?.model || 'N/A'}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-medium text-gray-900">
+                        {formatCurrency(payment.amount)}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center">
+                        {getStatusIcon(payment.status)}
+                        <span className={`ml-2 px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(payment.status)}`}>
+                          {payment.status}
                         </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900">
-                        <div className="flex items-center">
-                          <CalendarDaysIcon className="w-4 h-4 mr-1 text-secondary-400" />
-                          {formatDate(payment.createdAt)}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleViewReceipt(payment)}
-                            className="text-primary-600 hover:text-primary-700"
-                            title="View Receipt"
-                          >
-                            <EyeIcon className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDownloadReceipt(payment._id)}
-                            className="text-secondary-600 hover:text-secondary-700"
-                            title="Download Receipt"
-                          >
-                            <ArrowDownTrayIcon className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            
-            {/* Pagination */}
-            {pagination.totalPages > 1 && (
-              <div className="bg-white px-4 py-3 flex items-center justify-between border-t border-secondary-200 sm:px-6">
-                <div className="flex-1 flex justify-between sm:hidden">
-                  <Button
-                    variant="outline"
-                    onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                    disabled={pagination.page <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
-                    disabled={pagination.page >= pagination.totalPages}
-                  >
-                    Next
-                  </Button>
-                </div>
-                <div className="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
-                  <div>
-                    <p className="text-sm text-secondary-700">
-                      Showing{' '}
-                      <span className="font-medium">{(pagination.page - 1) * pagination.limit + 1}</span>
-                      {' '}to{' '}
-                      <span className="font-medium">
-                        {Math.min(pagination.page * pagination.limit, pagination.total)}
-                      </span>
-                      {' '}of{' '}
-                      <span className="font-medium">{pagination.total}</span>
-                      {' '}results
-                    </p>
-                  </div>
-                  <div>
-                    <nav className="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.max(1, prev.page - 1) }))}
-                        disabled={pagination.page <= 1}
-                      >
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setPagination(prev => ({ ...prev, page: Math.min(prev.totalPages, prev.page + 1) }))}
-                        disabled={pagination.page >= pagination.totalPages}
-                      >
-                        Next
-                      </Button>
-                    </nav>
-                  </div>
-                </div>
-              </div>
-            )}
-          </>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center text-sm text-gray-500">
+                        <CalendarIcon className="h-4 w-4 mr-1" />
+                        {formatDate(payment.createdAt)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
-
-      {/* Receipt Modal */}
-      {showReceiptModal && selectedPayment && (
-        <PaymentReceiptModal
-          payment={selectedPayment}
-          onClose={() => {
-            setShowReceiptModal(false);
-            setSelectedPayment(null);
-          }}
-        />
-      )}
     </div>
   );
 };

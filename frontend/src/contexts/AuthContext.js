@@ -155,6 +155,13 @@ export const AuthProvider = ({ children }) => {
             const token = authService.getAccessToken();
             if (token) {
               socketService.init(token);
+              
+              // Join user room after socket connects
+              setTimeout(() => {
+                if (user && user._id) {
+                  socketService.joinUserRoom(user._id);
+                }
+              }, 1000);
             }
             
             console.log('User session restored successfully');
@@ -168,6 +175,13 @@ export const AuthProvider = ({ children }) => {
               const token = authService.getAccessToken();
               if (token) {
                 socketService.init(token);
+                
+                // Join user room after socket connects
+                setTimeout(() => {
+                  if (user && user._id) {
+                    socketService.joinUserRoom(user._id);
+                  }
+                }, 1000);
               }
             } catch (error) {
               console.error('Token refresh failed, logging out:', error);

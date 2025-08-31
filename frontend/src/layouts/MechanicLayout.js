@@ -5,7 +5,9 @@ import MechanicDashboard from '../pages/mechanic/Dashboard';
 import AssignedRequests from '../pages/mechanic/AssignedRequests';
 import Earnings from '../pages/mechanic/Earnings';
 import Profile from '../pages/mechanic/Profile';
+import Calendar from '../pages/mechanic/Calendar';
 import VerificationForm from '../components/mechanic/VerificationForm';
+import Chat from '../pages/mechanic/Chat';
 import Sidebar from '../components/common/Sidebar';
 import Header from '../components/common/Header';
 
@@ -22,9 +24,19 @@ const MechanicLayout = () => {
       icon: 'WrenchScrewdriverIcon',
     },
     {
+      name: 'Calendar',
+      href: '/mechanic/calendar',
+      icon: 'CalendarIcon',
+    },
+    {
       name: 'Earnings',
       href: '/mechanic/earnings',
       icon: 'CurrencyDollarIcon',
+    },
+    {
+      name: 'Messages',
+      href: '/mechanic/chat',
+      icon: 'ChatBubbleLeftIcon',
     },
     {
       name: 'Verification',
@@ -51,7 +63,9 @@ const MechanicLayout = () => {
               <Routes>
                 <Route path="dashboard" element={<MechanicDashboard />} />
                 <Route path="requests" element={<AssignedRequests />} />
+                <Route path="calendar" element={<Calendar />} />
                 <Route path="earnings" element={<Earnings />} />
+                <Route path="chat/*" element={<Chat />} />
                 <Route path="verification" element={<VerificationForm />} />
                 <Route path="profile" element={<Profile />} />
                 <Route path="" element={<Navigate to="dashboard" replace />} />

@@ -20,6 +20,7 @@ const customerRoutes = require('./src/routes/customerRoutes');
 const mechanicRoutes = require('./src/routes/mechanicRoutes');
 const adminRoutes = require('./src/routes/adminRoutes');
 const paymentRoutes = require('./src/routes/paymentRoutes');
+const chatRoutes = require('./src/routes/chatRoutes');
 
 const app = express();
 
@@ -145,6 +146,7 @@ app.use('/api/customer', customerRoutes);
 app.use('/api/mechanic', mechanicRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -158,7 +160,8 @@ app.get('/', (req, res) => {
       customer: '/api/customer',
       mechanic: '/api/mechanic',
       admin: '/api/admin',
-      payments: '/api/payments'
+      payments: '/api/payments',
+      chat: '/api/chat'
     }
   });
 });
