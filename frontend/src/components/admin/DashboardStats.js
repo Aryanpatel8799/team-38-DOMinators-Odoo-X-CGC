@@ -83,7 +83,7 @@ const DashboardStats = () => {
       setLoading(false);
     }
   };
-
+  
   // Chart configurations
   const chartOptions = {
     responsive: true,
@@ -109,7 +109,7 @@ const DashboardStats = () => {
       },
     },
   };
-
+  
   // Request status chart data
   const requestStatusData = {
     labels: Object.keys(stats.charts.requestsByStatus),
